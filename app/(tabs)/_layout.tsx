@@ -35,10 +35,27 @@ export default function TabLayout() {
             tabBarIcon: ({ color, size }) => <Ionicons name="construct-outline" size={size} color={color} />,
           }}
         />
+        <Tabs.Screen
+          name="taleplerim"
+          options={{
+            title: 'Taleplerim',
+            tabBarIcon: ({ color, size }) => <Ionicons name="list-outline" size={size} color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="ayarlar"
+          options={{
+            title: 'Ayarlar',
+            tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" size={size} color={color} />,
+          }}
+        />
+        {/* Gizli Sayfalar */}
         <Tabs.Screen name="index" options={{ href: null }} />
-        <Tabs.Screen name="taleplerim" options={{ href: null }} />
         <Tabs.Screen name="explore" options={{ href: null }} />
         <Tabs.Screen name="yonetim" options={{ href: null }} />
+        <Tabs.Screen name="ekipler" options={{ href: null }} />
+        <Tabs.Screen name="raporlar" options={{ href: null }} />
+        <Tabs.Screen name="kullanicilar" options={{ href: null }} />
       </Tabs>
     );
   }
@@ -50,20 +67,44 @@ export default function TabLayout() {
         <Tabs.Screen
           name="yonetim"
           options={{
-            title: 'Talepler',
-            tabBarIcon: ({ color, size }) => <Ionicons name="clipboard-outline" size={size} color={color} />,
+            title: 'Yönetim',
+            tabBarIcon: ({ color, size }) => <Ionicons name="grid-outline" size={size} color={color} />,
           }}
         />
         <Tabs.Screen
-          name="explore"
+          name="ekipler"
           options={{
-            title: 'Projeler',
-            tabBarIcon: ({ color, size }) => <Ionicons name="business-outline" size={size} color={color} />,
+            title: 'Ekipler',
+            tabBarIcon: ({ color, size }) => <Ionicons name="people-circle-outline" size={size} color={color} />,
           }}
         />
+        <Tabs.Screen
+          name="kullanicilar"
+          options={{
+            title: 'Kullanıcılar',
+            tabBarIcon: ({ color, size }) => <Ionicons name="people-outline" size={size} color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="raporlar"
+          options={{
+            title: 'Raporlar',
+            tabBarIcon: ({ color, size }) => <Ionicons name="stats-chart-outline" size={size} color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="ayarlar"
+          options={{
+            title: 'Ayarlar',
+            tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" size={size} color={color} />,
+          }}
+        />
+
+        {/* Gizli Sayfalar */}
         <Tabs.Screen name="index" options={{ href: null }} />
         <Tabs.Screen name="taleplerim" options={{ href: null }} />
         <Tabs.Screen name="teknisyen" options={{ href: null }} />
+        <Tabs.Screen name="explore" options={{ href: null }} />
       </Tabs>
     );
   }
@@ -85,9 +126,21 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="list-outline" size={size} color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="ayarlar"
+        options={{
+          title: 'Ayarlar',
+          tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" size={size} color={color} />,
+        }}
+      />
+
+      {/* Gizli Sayfalar */}
       <Tabs.Screen name="explore" options={{ href: null }} />
       <Tabs.Screen name="teknisyen" options={{ href: null }} />
       <Tabs.Screen name="yonetim" options={{ href: null }} />
+      <Tabs.Screen name="ekipler" options={{ href: null }} />
+      <Tabs.Screen name="raporlar" options={{ href: null }} />
+      <Tabs.Screen name="kullanicilar" options={{ href: null }} />
     </Tabs>
   );
 }
