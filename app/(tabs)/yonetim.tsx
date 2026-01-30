@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { collection, doc, getDoc, getDocs, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
     FlatList,
@@ -18,7 +18,7 @@ import {
 import { ListSkeleton } from '../../components/Skeleton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { assignTalepToEkip, db, getActiveEkipler } from '../../firebaseConfig';
+import { assignTalepToEkip, db, getActiveEkipler, getTalepler } from '../../firebaseConfig';
 import { sendPushNotification } from '../../services/notificationService';
 import toast from '../../services/toastService';
 
@@ -77,16 +77,21 @@ export default function YonetimScreen() {
     const [tamEkranFoto, setTamEkranFoto] = useState<string | null>(null);
 
     const verileriYukle = async () => {
+        setYukleniyor(true);
         try {
+            // Filtreleri hazırla
+            const queryOptions: any = {};
+            if (filtre === 'yeni') queryOptions.durum = 'yeni';
+            if (filtre === 'atanmamis') queryOptions.atanmamis = true;
+            if (filtre === 'acil') queryOptions.oncelik = 'acil';
+
             // Talepleri yükle
-            const talepSnapshot = await getDocs(collection(db, 'talepler'));
-            const talepData = talepSnapshot.docs.map(d => ({ id: d.id, ...d.data() })) as Talep[];
+            const result = await getTalepler(user?.uid || '', 'yonetim', queryOptions); // Rolü yonetim varsayıyoruz burası için
+            if (result.success && result.talepler) {
+                setTalepler(result.talepler as Talep[]);
+            }
 
-            // Tarihe göre sırala (yeni önce)
-            talepData.sort((a, b) => (b.olusturmaTarihi?.seconds || 0) - (a.olusturmaTarihi?.seconds || 0));
-            setTalepler(talepData);
-
-            // Ekipleri yükle
+            // Ekipleri yükle (Sadece ilk açılışta veya refresh'te gerekebilir ama hızlıdır)
             const ekipResult = await getActiveEkipler();
             if (ekipResult.success && ekipResult.ekipler) {
                 setEkipler(ekipResult.ekipler as Ekip[]);
@@ -101,7 +106,7 @@ export default function YonetimScreen() {
 
     useEffect(() => {
         verileriYukle();
-    }, []);
+    }, [filtre]); // Filtre değişince verileri yeniden çek
 
     const onRefresh = useCallback(() => {
         setRefreshing(true);
@@ -178,24 +183,17 @@ export default function YonetimScreen() {
         }
     };
 
-    // Filtrelenmiş talepler
-    const filtrelenmis = talepler.filter(t => {
-        let uygun = true;
-        if (filtre === 'yeni') uygun = t.durum === 'yeni';
-        if (filtre === 'atanmamis') uygun = !t.atananTeknisyenId;
-        if (filtre === 'acil') uygun = t.oncelik === 'acil';
-
-        if (uygun && aramaMetni) {
-            const metin = aramaMetni.toLowerCase();
-            uygun = (
-                t.baslik.toLowerCase().includes(metin) ||
-                t.musteriAdi.toLowerCase().includes(metin) ||
-                t.projeAdi.toLowerCase().includes(metin) ||
-                (t.blokAdi ? t.blokAdi.toLowerCase().includes(metin) : false) ||
-                (t.kategori ? t.kategori.toLowerCase().includes(metin) : false)
-            );
-        }
-        return uygun;
+    // Listelenecek talepler (Sadece arama filtresi uygula, diğerleri sunucudan geldi)
+    const listelenecekTalepler = talepler.filter(t => {
+        if (!aramaMetni) return true;
+        const metin = aramaMetni.toLowerCase();
+        return (
+            t.baslik.toLowerCase().includes(metin) ||
+            t.musteriAdi.toLowerCase().includes(metin) ||
+            t.projeAdi.toLowerCase().includes(metin) ||
+            (t.blokAdi ? t.blokAdi.toLowerCase().includes(metin) : false) ||
+            (t.kategori ? t.kategori.toLowerCase().includes(metin) : false)
+        );
     });
 
     // İstatistikler
@@ -311,82 +309,82 @@ export default function YonetimScreen() {
                 ))}
             </View>
 
-            <ScrollView
+            <FlatList
                 style={styles.content}
+                data={listelenecekTalepler}
+                keyExtractor={(item) => item.id}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
-            >
-                {filtrelenmis.length === 0 ? (
-                    <View style={styles.emptyContainer}>
-                        <Ionicons name="document-text-outline" size={60} color={colors.textMuted} />
-                        <Text style={[styles.emptyText, { color: colors.textSecondary }]}>Bu filtrede talep yok</Text>
-                    </View>
-                ) : (
-                    filtrelenmis.map((talep) => {
-                        const durum = durumConfig[talep.durum] || durumConfig.yeni;
-                        return (
-                            <TouchableOpacity
-                                key={talep.id}
-                                style={[styles.talepCard, { backgroundColor: colors.card }]}
-                                onPress={() => { setSeciliTalep(talep); setDetayModalVisible(true); }}
-                            >
-                                <View style={[styles.statusBar, { backgroundColor: isDark ? durum.textDark : durum.text }]} />
+                ListEmptyComponent={
+                    !yukleniyor ? (
+                        <View style={styles.emptyContainer}>
+                            <Ionicons name="document-text-outline" size={60} color={colors.textMuted} />
+                            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>Bu filtrede talep yok</Text>
+                        </View>
+                    ) : null
+                }
+                renderItem={({ item: talep }) => {
+                    const durum = durumConfig[talep.durum] || durumConfig.yeni;
+                    return (
+                        <TouchableOpacity
+                            style={[styles.talepCard, { backgroundColor: colors.card }]}
+                            onPress={() => { setSeciliTalep(talep); setDetayModalVisible(true); }}
+                        >
+                            <View style={[styles.statusBar, { backgroundColor: isDark ? durum.textDark : durum.text }]} />
 
-                                <View style={styles.talepContent}>
-                                    <View style={styles.talepHeader}>
-                                        <View style={styles.headerBadges}>
-                                            <View style={[styles.kategoriBadge, { backgroundColor: isDark ? colors.inputBg : '#f5f5f5' }]}>
-                                                <Text style={[styles.kategoriText, { color: colors.textSecondary }]}>{talep.kategori}</Text>
-                                            </View>
-                                            {talep.oncelik === 'acil' && (
-                                                <View style={styles.acilBadgeInline}>
-                                                    <Ionicons name="warning" size={10} color="#fff" />
-                                                    <Text style={styles.acilTextInline}>ACİL</Text>
-                                                </View>
-                                            )}
+                            <View style={styles.talepContent}>
+                                <View style={styles.talepHeader}>
+                                    <View style={styles.headerBadges}>
+                                        <View style={[styles.kategoriBadge, { backgroundColor: isDark ? colors.inputBg : '#f5f5f5' }]}>
+                                            <Text style={[styles.kategoriText, { color: colors.textSecondary }]}>{talep.kategori}</Text>
                                         </View>
-                                        <View style={[styles.durumBadge, { backgroundColor: isDark ? durum.bgDark : durum.bg }]}>
-                                            <Ionicons name={durum.icon as any} size={12} color={isDark ? durum.textDark : durum.text} />
-                                            <Text style={[styles.durumText, { color: isDark ? durum.textDark : durum.text }]}>{durum.label}</Text>
-                                        </View>
-                                    </View>
-
-                                    <Text style={[styles.talepBaslik, { color: colors.text }]}>{talep.baslik}</Text>
-
-                                    <View style={styles.infoRow}>
-                                        <Ionicons name="person-outline" size={14} color={colors.textSecondary} />
-                                        <Text style={[styles.infoText, { color: colors.textSecondary }]}>{talep.musteriAdi}</Text>
-                                    </View>
-
-                                    <View style={styles.infoRow}>
-                                        <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
-                                        <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                                            {talep.projeAdi} {talep.blokAdi && `• ${talep.blokAdi}`}
-                                        </Text>
-                                    </View>
-
-                                    {talep.atananTeknisyenAdi && (
-                                        <View style={[styles.teknisyenInfo, { backgroundColor: isDark ? '#1a3a5c' : '#e3f2fd' }]}>
-                                            <Ionicons name="construct" size={14} color={colors.primary} />
-                                            <Text style={[styles.teknisyenText, { color: colors.primary }]}>{talep.atananTeknisyenAdi}</Text>
-                                        </View>
-                                    )}
-
-                                    <View style={[styles.talepFooter, { borderTopColor: colors.border }]}>
-                                        <Text style={[styles.tarihText, { color: colors.textMuted }]}>{formatTarih(talep.olusturmaTarihi)}</Text>
-                                        {!talep.atananTeknisyenId && (
-                                            <View style={[styles.atanmamisBadge, { backgroundColor: isDark ? '#3a2a1a' : '#fff3e0' }]}>
-                                                <Text style={{ color: isDark ? '#ffb74d' : '#ef6c00', fontSize: 10, fontWeight: '600' }}>Atanmamış</Text>
+                                        {talep.oncelik === 'acil' && (
+                                            <View style={styles.acilBadgeInline}>
+                                                <Ionicons name="warning" size={10} color="#fff" />
+                                                <Text style={styles.acilTextInline}>ACİL</Text>
                                             </View>
                                         )}
                                     </View>
+                                    <View style={[styles.durumBadge, { backgroundColor: isDark ? durum.bgDark : durum.bg }]}>
+                                        <Ionicons name={durum.icon as any} size={12} color={isDark ? durum.textDark : durum.text} />
+                                        <Text style={[styles.durumText, { color: isDark ? durum.textDark : durum.text }]}>{durum.label}</Text>
+                                    </View>
                                 </View>
-                            </TouchableOpacity>
-                        );
-                    })
-                )}
 
-                <View style={{ height: 30 }} />
-            </ScrollView>
+                                <Text style={[styles.talepBaslik, { color: colors.text }]}>{talep.baslik}</Text>
+
+                                <View style={styles.infoRow}>
+                                    <Ionicons name="person-outline" size={14} color={colors.textSecondary} />
+                                    <Text style={[styles.infoText, { color: colors.textSecondary }]}>{talep.musteriAdi}</Text>
+                                </View>
+
+                                <View style={styles.infoRow}>
+                                    <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
+                                    <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                                        {talep.projeAdi} {talep.blokAdi && `• ${talep.blokAdi}`}
+                                    </Text>
+                                </View>
+
+                                {talep.atananTeknisyenAdi && (
+                                    <View style={[styles.teknisyenInfo, { backgroundColor: isDark ? '#1a3a5c' : '#e3f2fd' }]}>
+                                        <Ionicons name="construct" size={14} color={colors.primary} />
+                                        <Text style={[styles.teknisyenText, { color: colors.primary }]}>{talep.atananTeknisyenAdi}</Text>
+                                    </View>
+                                )}
+
+                                <View style={[styles.talepFooter, { borderTopColor: colors.border }]}>
+                                    <Text style={[styles.tarihText, { color: colors.textMuted }]}>{formatTarih(talep.olusturmaTarihi)}</Text>
+                                    {!talep.atananTeknisyenId && (
+                                        <View style={[styles.atanmamisBadge, { backgroundColor: isDark ? '#3a2a1a' : '#fff3e0' }]}>
+                                            <Text style={{ color: isDark ? '#ffb74d' : '#ef6c00', fontSize: 10, fontWeight: '600' }}>Atanmamış</Text>
+                                        </View>
+                                    )}
+                                </View>
+                            </View>
+                        </TouchableOpacity>
+                    );
+                }}
+                ListFooterComponent={<View style={{ height: 30 }} />}
+            />
 
             {/* Detay Modal */}
             <Modal visible={detayModalVisible} animationType="slide" transparent onRequestClose={() => setDetayModalVisible(false)}>

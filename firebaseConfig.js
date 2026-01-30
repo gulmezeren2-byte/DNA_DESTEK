@@ -75,7 +75,7 @@ export const createTalep = async (talepData) => {
 };
 
 // 2. getTalepler
-export const getTalepler = async (userId, rol) => {
+export const getTalepler = async (userId, rol, filters = {}) => {
   try {
     let talepler = [];
     const talesRef = collection(db, "talepler");
@@ -105,8 +105,18 @@ export const getTalepler = async (userId, rol) => {
       });
 
     } else {
-      // Yönetim: Hepsi
-      const q = query(talesRef, orderBy("olusturmaTarihi", "desc"));
+      // Yönetim: Filtrelere göre sorgu
+      let q = query(talesRef, orderBy("olusturmaTarihi", "desc"));
+
+      if (filters.durum) {
+        q = query(talesRef, where('durum', '==', filters.durum), orderBy("olusturmaTarihi", "desc"));
+      } else if (filters.oncelik) {
+        q = query(talesRef, where('oncelik', '==', filters.oncelik), orderBy("olusturmaTarihi", "desc"));
+      } else if (filters.atanmamis) {
+        // Atanmamış talepler genellikle 'yeni' durumundadır.
+        q = query(talesRef, where('durum', '==', 'yeni'), orderBy("olusturmaTarihi", "desc"));
+      }
+
       const snapshot = await getDocs(q);
       talepler = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
     }
