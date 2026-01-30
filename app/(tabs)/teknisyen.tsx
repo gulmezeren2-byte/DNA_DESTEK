@@ -353,14 +353,7 @@ export default function TeknisyenScreen() {
         return (
             <View style={[styles.container, { backgroundColor: colors.background }]}>
                 <StatusBar barStyle="light-content" />
-                <View style={[styles.header, { backgroundColor: colors.headerBg }]}>
-                    <View style={styles.headerTop}>
-                        <View>
-                            <Text style={styles.headerTitle}>Teknisyen Paneli</Text>
-                            <Text style={styles.headerSubtitle}>Yükleniyor...</Text>
-                        </View>
-                    </View>
-                </View>
+                <CustomHeader subtitle="Yükleniyor..." />
                 <ListSkeleton count={4} type="talep" />
             </View>
         );

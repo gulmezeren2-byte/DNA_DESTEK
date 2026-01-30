@@ -350,7 +350,6 @@ export default function AyarlarScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    container: { flex: 1 },
     // header: ... (removed as it is in CustomHeader)
     content: { flex: 1, padding: 20 },
 

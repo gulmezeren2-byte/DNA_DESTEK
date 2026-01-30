@@ -18,7 +18,7 @@ import {
 import { ListSkeleton } from '../../components/Skeleton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { db, getActiveEkipler, getTalepler } from '../../firebaseConfig';
+import { assignTalepToEkip, db, getActiveEkipler, getTalepler } from '../../firebaseConfig';
 import { sendPushNotification } from '../../services/notificationService';
 import toast from '../../services/toastService';
 
