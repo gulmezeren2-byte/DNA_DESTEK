@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { arrayUnion, collection, doc, Firestore, getDoc, getDocs, Timestamp, updateDoc } from 'firebase/firestore';
+import { arrayUnion, collection, doc, Firestore, getDoc, onSnapshot, orderBy, query, Timestamp, updateDoc, where } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -17,7 +18,7 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import CustomHeader from '../../components/CustomHeader';
+import Logo from '../../components/Logo';
 import { ListSkeleton } from '../../components/Skeleton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -160,7 +161,6 @@ export default function TeknisyenScreen() {
             setCozumModalVisible(false);
             setDetayModalVisible(false);
             setCozumFotograflari([]);
-            talepleriYukle();
         } catch (error: any) {
             toast.error('Hata: ' + error.message);
         } finally {
@@ -169,60 +169,79 @@ export default function TeknisyenScreen() {
         }
     };
 
-    const talepleriYukle = async () => {
-        if (!user) return;
+    // Realtime Data Loading
+    useEffect(() => {
+        let unsubscribe: (() => void) | undefined;
 
-        try {
-            // Önce kullanıcının üyesi olduğu ekipleri bul
-            const ekipResult = await getAllEkipler();
-            let kullaniciEkipIds: string[] = [];
+        const initRealtime = async () => {
+            if (!user) return;
 
-            if (ekipResult.success && ekipResult.ekipler) {
-                kullaniciEkipIds = ekipResult.ekipler
-                    .filter((ekip: any) => ekip.uyeler?.includes(user.uid) && ekip.aktif)
-                    .map((ekip: any) => ekip.id);
-            }
+            try {
+                // 1. Kullanıcının ekiplerini bul
+                const ekipResult = await getAllEkipler();
+                let kullaniciEkipIds: string[] = [];
 
-            // Eğer kullanıcı hiçbir ekipte değilse, boş liste dön
-            if (kullaniciEkipIds.length === 0) {
-                setTalepler([]);
+                if (ekipResult.success && ekipResult.ekipler) {
+                    kullaniciEkipIds = ekipResult.ekipler
+                        .filter((ekip: any) => ekip.uyeler?.includes(user.uid) && ekip.aktif)
+                        .map((ekip: any) => ekip.id);
+                }
+
+                if (kullaniciEkipIds.length === 0) {
+                    setTalepler([]);
+                    setYukleniyor(false);
+                    return;
+                }
+
+                // 2. Bu ekiplere atanmış talepleri dinle (Max 10 ekip support)
+                // Eğer ekip sayısı 10'dan fazlaysa chunk'lara bölmek gerekir ama şimdilik basit tutuyoruz.
+                const talesRef = collection(db as Firestore, 'talepler');
+                const q = query(
+                    talesRef,
+                    where('atananEkipId', 'in', kullaniciEkipIds.slice(0, 10)),
+                    orderBy('olusturmaTarihi', 'desc')
+                );
+
+                unsubscribe = onSnapshot(q, (snapshot) => {
+                    const fetchedTalepler = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as Talep[];
+
+                    // Client-side sort (Acil en üste)
+                    fetchedTalepler.sort((a, b) => {
+                        if (a.oncelik === 'acil' && b.oncelik !== 'acil') return -1;
+                        if (b.oncelik === 'acil' && a.oncelik !== 'acil') return 1;
+                        // Tarih sıralaması zaten query'den geliyor
+                        const dateA = a.olusturmaTarihi?.seconds || 0;
+                        const dateB = b.olusturmaTarihi?.seconds || 0;
+                        return dateB - dateA;
+                    });
+
+                    setTalepler(fetchedTalepler);
+                    setYukleniyor(false);
+                }, (error) => {
+                    console.error("Realtime error:", error);
+                    setYukleniyor(false);
+                });
+
+            } catch (error) {
+                console.error("Setup error:", error);
                 setYukleniyor(false);
-                setRefreshing(false);
-                return;
             }
+        };
 
-            // Tüm talepleri çek ve filtrele (Firestore 'in' sorgusu max 10 eleman destekliyor)
-            const snapshot = await getDocs(collection(db as Firestore, 'talepler'));
-            const allTalepler = snapshot.docs.map((d: any) => ({ id: d.id, ...d.data() })) as Talep[];
-
-            // Kullanıcının ekiplerine atanmış talepleri filtrele
-            const filteredTalepler = allTalepler.filter(talep =>
-                talep.atananEkipId && kullaniciEkipIds.includes(talep.atananEkipId)
-            );
-
-            // Önceliğe göre sırala (acil önce)
-            filteredTalepler.sort((a, b) => {
-                if (a.oncelik === 'acil' && b.oncelik !== 'acil') return -1;
-                if (b.oncelik === 'acil' && a.oncelik !== 'acil') return 1;
-                return 0;
-            });
-
-            setTalepler(filteredTalepler);
-        } catch (error) {
-            console.error('Talepler yüklenemedi:', error);
+        if (user) {
+            initRealtime();
         }
 
-        setYukleniyor(false);
-        setRefreshing(false);
-    };
-
-    useEffect(() => {
-        talepleriYukle();
+        return () => {
+            if (unsubscribe) unsubscribe();
+        };
     }, [user]);
 
     const onRefresh = useCallback(() => {
+        // Realtime olduğu için refresh sadece ekipleri ve bağlantıyı yenilemek için kullanılabilir
+        // Basitçe loading gösterip kapatabiliriz çünkü data zaten canlı.
         setRefreshing(true);
-        talepleriYukle();
+        setTimeout(() => setRefreshing(false), 1000);
     }, []);
 
     const formatTarih = (timestamp: { seconds: number }) => {
@@ -272,10 +291,8 @@ export default function TeknisyenScreen() {
 
             toast.success('Durum güncellendi!');
 
-            setDetayModalVisible(false);
             setCozumModalVisible(false);
             setCozumFotograflari([]);
-            talepleriYukle();
         } catch (error: any) {
             toast.error('Hata: ' + error.message);
         } finally {
@@ -336,7 +353,6 @@ export default function TeknisyenScreen() {
 
             setYeniYorum('');
             setYorumModalVisible(false);
-            talepleriYukle();
         } catch (error: any) {
             toast.error('Hata: ' + error.message);
         } finally {
@@ -353,7 +369,22 @@ export default function TeknisyenScreen() {
         return (
             <View style={[styles.container, { backgroundColor: colors.background }]}>
                 <StatusBar barStyle="light-content" />
-                <CustomHeader subtitle="Yükleniyor..." />
+                <LinearGradient
+                    colors={['#1a3a5c', '#203a43', '#2c5364']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.header}
+                >
+                    <View style={styles.headerTop}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                            <Logo size="sm" variant="glass" />
+                            <View>
+                                <Text style={styles.headerTitle}>Teknisyen Paneli</Text>
+                                <Text style={styles.headerSubtitle}>Yükleniyor...</Text>
+                            </View>
+                        </View>
+                    </View>
+                </LinearGradient>
                 <ListSkeleton count={4} type="talep" />
             </View>
         );
@@ -366,28 +397,44 @@ export default function TeknisyenScreen() {
         <View style={[styles.container, { backgroundColor: colors.background }]}>
             <StatusBar barStyle="light-content" />
 
-            {/* Premium Custom Header */}
-            <CustomHeader />
+            {/* Premium Custom Header & Stats */}
+            <LinearGradient
+                colors={['#1a3a5c', '#203a43', '#2c5364']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.header}
+            >
+                <View style={styles.headerTop}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                        <Logo size="sm" variant="glass" />
+                        <View>
+                            <Text style={styles.headerTitle}>Teknisyen Paneli</Text>
+                            <Text style={styles.headerSubtitle}>İş Listesi</Text>
+                        </View>
+                    </View>
+                </View>
 
-            {/* İstatistikler - Floating Card Style */}
-            <View style={styles.statsContainer}>
-                <View style={styles.statItem}>
-                    <Text style={styles.statNumber}>{aktifTalepler.length}</Text>
-                    <Text style={styles.statLabel}>Aktif</Text>
+                {/* İstatistikler - Floating Card Style */}
+                <View style={styles.statsContainer}>
+                    <View style={styles.statItem}>
+                        <Text style={styles.statNumber}>{aktifTalepler.length}</Text>
+                        <Text style={styles.statLabel}>Aktif</Text>
+                    </View>
+                    <View style={[styles.statDivider, { backgroundColor: 'rgba(255,255,255,0.2)' }]} />
+                    <View style={styles.statItem}>
+                        <Text style={styles.statNumber}>{tamamlananTalepler.length}</Text>
+                        <Text style={styles.statLabel}>Biten</Text>
+                    </View>
+                    <View style={[styles.statDivider, { backgroundColor: 'rgba(255,255,255,0.2)' }]} />
+                    <View style={styles.statItem}>
+                        <Text style={[styles.statNumber, { color: '#ffcdd2' }]}>
+                            {talepler.filter(t => t.oncelik === 'acil' && t.durum !== 'cozuldu').length}
+                        </Text>
+                        <Text style={styles.statLabel}>Acil</Text>
+                    </View>
                 </View>
-                <View style={[styles.statDivider, { backgroundColor: 'rgba(255,255,255,0.2)' }]} />
-                <View style={styles.statItem}>
-                    <Text style={styles.statNumber}>{tamamlananTalepler.length}</Text>
-                    <Text style={styles.statLabel}>Biten</Text>
-                </View>
-                <View style={[styles.statDivider, { backgroundColor: 'rgba(255,255,255,0.2)' }]} />
-                <View style={styles.statItem}>
-                    <Text style={[styles.statNumber, { color: '#ffcdd2' }]}>
-                        {talepler.filter(t => t.oncelik === 'acil').length}
-                    </Text>
-                    <Text style={styles.statLabel}>Acil</Text>
-                </View>
-            </View>
+            </LinearGradient>
+
 
             <ScrollView
                 style={styles.content}
@@ -753,26 +800,45 @@ const styles = StyleSheet.create({
     container: { flex: 1 },
     loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     loadingText: { marginTop: 12, fontSize: 14 },
-    // Eski header stilleri kaldırıldı, CustomHeader kullanılıyor
-    header: { display: 'none' },
+    header: {
+        paddingTop: 60,
+        paddingBottom: 25,
+        paddingHorizontal: 20,
+        borderBottomLeftRadius: 30,
+        borderBottomRightRadius: 30,
+        elevation: 5,
+        zIndex: 10,
+    },
+    headerTop: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 0,
+    },
+    headerTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#fff',
+        textShadowColor: 'rgba(0, 0, 0, 0.3)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 3
+    },
+    headerSubtitle: {
+        fontSize: 14,
+        color: 'rgba(255,255,255,0.9)',
+    },
 
     // Stats Container Refined (Overlay effect)
     statsContainer: {
         flexDirection: 'row',
         justifyContent: 'space-around',
         alignItems: 'center',
-        marginHorizontal: 20,
-        marginTop: -30, // Pull up to overlap with header slightly
-        marginBottom: 10,
-        backgroundColor: '#37474f', // Dark grey specialized for stats
+        marginTop: 20,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
         borderRadius: 20,
-        padding: 20,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.2,
-        shadowRadius: 12,
-        elevation: 8,
-        zIndex: 20
+        padding: 15,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.2)',
     },
     statItem: { alignItems: 'center', minWidth: 60 },
     statNumber: { fontSize: 26, fontWeight: '800', color: '#fff' },

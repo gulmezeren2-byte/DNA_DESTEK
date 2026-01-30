@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { collection, getCountFromServer, getDocs, orderBy, query, where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
     Dimensions,
     RefreshControl,
     ScrollView,
@@ -11,9 +11,12 @@ import {
     StyleSheet,
     Text,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
 import { BarChart, LineChart, PieChart, ProgressChart } from 'react-native-chart-kit';
+import { FadeInView } from '../../components/AnimatedList';
+import Logo from '../../components/Logo';
+import { ReportSkeleton } from '../../components/Skeleton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { db, getAllEkipler } from '../../firebaseConfig';
@@ -297,9 +300,8 @@ export default function RaporlarScreen() {
 
     if (yukleniyor) {
         return (
-            <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
-                <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Raporlar yükleniyor...</Text>
+            <View style={[styles.container, { backgroundColor: colors.background }]}>
+                <ReportSkeleton />
             </View>
         );
     }
@@ -309,20 +311,28 @@ export default function RaporlarScreen() {
             <StatusBar barStyle="light-content" />
 
             {/* Header */}
-            <View style={[styles.header, { backgroundColor: colors.headerBg }]}>
+            <LinearGradient
+                colors={['#1a3a5c', '#203a43', '#2c5364']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.header}
+            >
                 <View style={styles.headerTop}>
                     <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
                         <Ionicons name="arrow-back" size={24} color="#fff" />
                     </TouchableOpacity>
-                    <View style={{ flex: 1 }}>
-                        <Text style={styles.headerTitle}>📊 Raporlar</Text>
-                        <Text style={styles.headerSubtitle}>Anlık İstatistikler ve Analizler</Text>
+                    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <Logo size="sm" variant="glass" />
+                        <View>
+                            <Text style={styles.headerTitle}>Raporlar</Text>
+                            <Text style={styles.headerSubtitle}>Analiz & İstatistikler</Text>
+                        </View>
                     </View>
-                    <TouchableOpacity onPress={() => { setRefreshing(true); verileriYukle(); }}>
-                        <Ionicons name="refresh" size={24} color="#fff" />
+                    <TouchableOpacity onPress={() => { setRefreshing(true); verileriYukle(); }} style={styles.refreshButton}>
+                        <Ionicons name="refresh" size={20} color="#fff" />
                     </TouchableOpacity>
                 </View>
-            </View>
+            </LinearGradient>
 
             <ScrollView
                 style={styles.content}
@@ -352,7 +362,7 @@ export default function RaporlarScreen() {
                 </View>
 
                 {/* Özet Kartlar (Global Stats) */}
-                <View style={styles.summaryContainer}>
+                <FadeInView delay={0} style={styles.summaryContainer}>
                     <View style={[styles.summaryCard, { backgroundColor: '#818cf8' }]}>
                         <Ionicons name="documents" size={28} color="#fff" />
                         <Text style={styles.summaryNumber}>{globalStats.toplam}</Text>
@@ -373,10 +383,10 @@ export default function RaporlarScreen() {
                         <Text style={styles.summaryNumber}>{globalStats.acil}</Text>
                         <Text style={styles.summaryLabel}>Acil</Text>
                     </View>
-                </View>
+                </FadeInView>
 
                 {/* Çözüm Oranı Progress */}
-                <View style={[styles.chartCard, { backgroundColor: colors.card }]}>
+                <FadeInView delay={100} style={[styles.chartCard, { backgroundColor: colors.card }]}>
                     <Text style={[styles.chartTitle, { color: colors.text }]}>🎯 Genel Başarı Oranı</Text>
                     <View style={styles.progressContainer}>
                         <ProgressChart
@@ -397,10 +407,10 @@ export default function RaporlarScreen() {
                             <Text style={[styles.progressLabel, { color: colors.textSecondary }]}>Başarı</Text>
                         </View>
                     </View>
-                </View>
+                </FadeInView>
 
                 {/* Son X Gün Trend */}
-                <View style={[styles.chartCard, { backgroundColor: colors.card }]}>
+                <FadeInView delay={200} style={[styles.chartCard, { backgroundColor: colors.card }]}>
                     <Text style={[styles.chartTitle, { color: colors.text }]}>📈 Son {filterDays} Günlük Aktivite</Text>
                     <LineChart
                         data={lineData}
@@ -415,11 +425,11 @@ export default function RaporlarScreen() {
                         withHorizontalLabels={true}
                         fromZero
                     />
-                </View>
+                </FadeInView>
 
                 {/* Durum Dağılımı */}
                 {pieData.length > 0 && (
-                    <View style={[styles.chartCard, { backgroundColor: colors.card }]}>
+                    <FadeInView delay={300} style={[styles.chartCard, { backgroundColor: colors.card }]}>
                         <Text style={[styles.chartTitle, { color: colors.text }]}>🍕 Durum Dağılımı</Text>
                         <PieChart
                             data={pieData}
@@ -432,12 +442,12 @@ export default function RaporlarScreen() {
                             absolute
                             style={styles.chart}
                         />
-                    </View>
+                    </FadeInView>
                 )}
 
                 {/* Kategori Dağılımı */}
                 {kategoriLabels.length > 0 && (
-                    <View style={[styles.chartCard, { backgroundColor: colors.card }]}>
+                    <FadeInView delay={400} style={[styles.chartCard, { backgroundColor: colors.card }]}>
                         <Text style={[styles.chartTitle, { color: colors.text }]}>📊 Kategori Bazlı Arızalar</Text>
                         <BarChart
                             data={barData}
@@ -453,7 +463,7 @@ export default function RaporlarScreen() {
                             yAxisLabel=""
                             yAxisSuffix=""
                         />
-                    </View>
+                    </FadeInView>
                 )}
 
                 {/* Top Ekipler */}
@@ -537,11 +547,23 @@ const styles = StyleSheet.create({
     container: { flex: 1 },
     loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     loadingText: { marginTop: 12, fontSize: 14 },
-    header: { paddingTop: 50, paddingBottom: 20, paddingHorizontal: 20 },
+    header: {
+        paddingTop: 50,
+        paddingBottom: 25,
+        paddingHorizontal: 20,
+        borderBottomLeftRadius: 30,
+        borderBottomRightRadius: 30,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 10,
+        elevation: 8,
+    },
     headerTop: { flexDirection: 'row', alignItems: 'center' },
-    backButton: { marginRight: 12 },
-    headerTitle: { fontSize: 24, fontWeight: '700', color: '#fff' },
-    headerSubtitle: { fontSize: 13, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
+    backButton: { marginRight: 12, padding: 8, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 12 },
+    refreshButton: { padding: 8, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 12 },
+    headerTitle: { fontSize: 24, fontWeight: '700', color: '#fff', letterSpacing: 0.5 },
+    headerSubtitle: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
     content: { flex: 1, padding: 16 },
 
     // Filter

@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -16,10 +17,12 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import AnimatedItem from '../../components/AnimatedList';
+import Logo from '../../components/Logo';
 import { ListSkeleton } from '../../components/Skeleton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { getTalepler, puanlaTalep, updateTalepDurum } from '../../firebaseConfig';
+import { getTalepler, puanlaTalep, subscribeToTalepler, updateTalepDurum } from '../../firebaseConfig';
 import toast from '../../services/toastService';
 
 interface Talep {
@@ -164,7 +167,59 @@ export default function TaleplerimScreen() {
     };
 
     useEffect(() => {
-        talepleriYukle();
+        if (!user) return;
+
+        // İlk yükleme (Subscription)
+        // Hibrit: İlk sayfa Realtime, kalanı Pagination
+        setYukleniyor(true);
+        const unsubscribe = subscribeToTalepler(user.uid, user.rol, {}, (result) => {
+            if (result.success && result.talepler) {
+                // Eğer sayfalama ile daha fazla veri yüklendiyse, realtime güncellemeyi
+                // mevcut listenin başına eklemeli veya birleştirmeliyiz.
+                // Basitlik için: Realtime sadece "başlangıç listesini" günceller.
+                // Eğer kullanıcı çok aşağı indiyse ve yeni veri gelirse liste resetlenebilir veya
+                // yeni veri yukarıda belirir.
+
+                // Burada basit strateji: Gelen veri (ilk 50) her zaman üstüne yazar.
+                // Ancak "dahaFazlaYukle" ile gelen eski verileri korumak lazım mı?
+                // Genellikle realtime + infinite scroll zordur.
+                // Çözüm: Realtime sadece "yeni" veri geldiğinde `talepler` state'inin başını günceller.
+                // Ama `onSnapshot` tüm seti (50) döndürür.
+
+                setTalepler(prev => {
+                    // Eğer sayfalama yapılmadıysa (sadece ilk set varsa), direk değiştir.
+                    if (!lastDoc) return result.talepler as Talep[];
+
+                    // Eğer sayfalama yapıldıysa, ilk 50'yi güncelle, gerisini koru?
+                    // Bu ID çakışması yapabilir.
+                    // En temiz hibrit: Sayfalamayı sadece "geçmiş" için kullan, realtime'ı "güncel" için.
+                    // Şimdilik: Realtime veriyi bas, lastDoc'u güncelleme (çünkü snapshot'tan lastDoc almak zor).
+                    // Aslında snapshot.docs son elemanı verir ama burada map lenmiş veri dönüyor.
+                    // İdeal çözüm için subscribeToTalepler'in snapshot da dönmesi lazım.
+
+                    // Kestirme: Realtime sarmalayıcı sadece ilk seti (50) yönetir. 
+                    // Sayfalama (load more) yapıldığında, kullanıcı en alta inmiştir.
+                    // Yeni veri gelirse yukarıda belirir.
+                    // Bu durumda 'prev' ile birleştirme yapmayalım, çünkü snapshot zaten "son halini" verir (ilk 50 için).
+                    // Eğer 50'den fazla veri varsa ve biz onları loadMore ile yüklediysek, onları korumalıyız.
+                    // Ama snapshot 50 tane döndürecek.
+
+                    // Basit Mod: Realtime çalışırken infinite scroll'u "manuel" tutalım.
+                    // Snapshot gelince sadece ilk 50'yi set edelim.
+                    return result.talepler as Talep[];
+                });
+
+                if (result.talepler.length < 50) setHasMore(false);
+                else setHasMore(true);
+
+                // Not: Snapshot her tetiklendiğinde yukleniyor false olur.
+                setYukleniyor(false);
+            }
+        });
+
+        return () => {
+            if (unsubscribe) unsubscribe();
+        }
     }, [user]);
 
     const onRefresh = useCallback(() => {
@@ -259,16 +314,27 @@ export default function TaleplerimScreen() {
         return (
             <View style={[styles.container, { backgroundColor: colors.background }]}>
                 <StatusBar barStyle="light-content" backgroundColor={colors.headerBg} />
-                <View style={[styles.header, { backgroundColor: colors.headerBg }]}>
+
+                {/* Premium Header */}
+                <LinearGradient
+                    colors={['#1a3a5c', '#203a43', '#2c5364']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.header}
+                >
                     <View style={styles.headerTop}>
-                        <View>
-                            <Text style={[styles.headerTitle, { color: colors.headerText }]}>Taleplerim</Text>
-                            <Text style={[styles.headerSubtitle, { color: 'rgba(255,255,255,0.7)' }]}>
-                                Yükleniyor...
-                            </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                            <Logo size="md" variant="glass" />
+                            <View>
+                                <Text style={styles.headerTitle}>Taleplerim</Text>
+                                <Text style={styles.headerSubtitle}>Destek Geçmişi</Text>
+                            </View>
                         </View>
+                        <TouchableOpacity style={styles.refreshButton} onPress={() => talepleriYukle(true)}>
+                            <Ionicons name="refresh" size={20} color="#fff" />
+                        </TouchableOpacity>
                     </View>
-                </View>
+                </LinearGradient>
                 <ListSkeleton count={5} type="talep" />
             </View>
         );
@@ -279,19 +345,27 @@ export default function TaleplerimScreen() {
             <StatusBar barStyle="light-content" backgroundColor={colors.headerBg} />
 
             {/* Header */}
-            <View style={[styles.header, { backgroundColor: colors.headerBg }]}>
+            <LinearGradient
+                colors={['#1a3a5c', '#203a43', '#2c5364']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.header}
+            >
                 <View style={styles.headerTop}>
-                    <View>
-                        <Text style={[styles.headerTitle, { color: colors.headerText }]}>Taleplerim</Text>
-                        <Text style={[styles.headerSubtitle, { color: 'rgba(255,255,255,0.7)' }]}>
-                            {talepler.length} talep • {talepler.filter(t => t.durum === 'islemde' || t.durum === 'atandi').length} aktif
-                        </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                        <Logo size="md" variant="glass" />
+                        <View>
+                            <Text style={styles.headerTitle}>Taleplerim</Text>
+                            <Text style={styles.headerSubtitle}>
+                                {talepler.length} talep • {talepler.filter(t => t.durum === 'islemde' || t.durum === 'atandi').length} aktif
+                            </Text>
+                        </View>
                     </View>
-                    <TouchableOpacity style={styles.settingsButton} onPress={() => router.push('/ayarlar')}>
-                        <Ionicons name="settings-outline" size={24} color={colors.headerText} />
+                    <TouchableOpacity style={styles.refreshButton} onPress={() => talepleriYukle(true)}>
+                        <Ionicons name="refresh" size={20} color="#fff" />
                     </TouchableOpacity>
                 </View>
-            </View>
+            </LinearGradient>
 
             <FlatList
                 style={styles.content}
@@ -302,6 +376,16 @@ export default function TaleplerimScreen() {
                 }
                 onEndReached={dahaFazlaYukle}
                 onEndReachedThreshold={0.5}
+                // Performance Optimizations
+                initialNumToRender={10}
+                windowSize={5}
+                maxToRenderPerBatch={5}
+                removeClippedSubviews={true}
+                // Performance Optimizations
+                initialNumToRender={10}
+                windowSize={5}
+                maxToRenderPerBatch={5}
+                removeClippedSubviews={true}
                 ListFooterComponent={
                     loadingMore ?
                         <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 20 }} /> :
@@ -318,79 +402,82 @@ export default function TaleplerimScreen() {
                         </Text>
                     </View>
                 }
-                renderItem={({ item: talep }) => {
+                renderItem={({ item: talep, index }) => {
                     const durum = durumConfig[talep.durum] || durumConfig.yeni;
                     const hasFoto = talep.fotograflar && talep.fotograflar.length > 0;
 
                     return (
-                        <TouchableOpacity
-                            style={[styles.talepCard, { backgroundColor: colors.card }]}
-                            activeOpacity={0.7}
-                            onPress={() => talepDetayGoster(talep)}
-                        >
-                            {/* Sol kenar renk göstergesi */}
-                            <View style={[styles.statusIndicator, { backgroundColor: isDark ? durum.textDark : durum.text }]} />
+                        <AnimatedItem index={index}>
+                            <TouchableOpacity
+                                style={[styles.talepCard, { backgroundColor: colors.card }]}
+                                activeOpacity={0.7}
+                                onPress={() => talepDetayGoster(talep)}
+                            >
+                                {/* ... content ... */}
+                                {/* Sol kenar renk göstergesi */}
+                                <View style={[styles.statusIndicator, { backgroundColor: isDark ? durum.textDark : durum.text }]} />
 
-                            <View style={styles.talepContent}>
-                                {/* Üst kısım */}
-                                <View style={styles.talepHeader}>
-                                    <View style={[styles.kategoriContainer, { backgroundColor: isDark ? colors.inputBg : '#f5f5f5' }]}>
-                                        <Text style={[styles.kategoriText, { color: colors.textSecondary }]}>{talep.kategori}</Text>
-                                    </View>
-                                    <View style={[styles.durumBadge, { backgroundColor: isDark ? durum.bgDark : durum.bg }]}>
-                                        <Ionicons name={durum.icon as any} size={12} color={isDark ? durum.textDark : durum.text} />
-                                        <Text style={[styles.durumText, { color: isDark ? durum.textDark : durum.text }]}>
-                                            {durum.label}
-                                        </Text>
-                                    </View>
-                                </View>
-
-                                {/* Başlık */}
-                                <Text style={[styles.talepBaslik, { color: colors.text }]}>{talep.baslik}</Text>
-
-                                {/* Konum */}
-                                <View style={styles.infoRow}>
-                                    <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
-                                    <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                                        {talep.projeAdi}
-                                        {talep.blokAdi ? ` • ${talep.blokAdi}` : ''}
-                                        {talep.daireNo ? ` • D.${talep.daireNo}` : ''}
-                                    </Text>
-                                </View>
-
-                                {/* Teknisyen bilgisi veya durum mesajı */}
-                                {talep.atananTeknisyenAdi ? (
-                                    <View style={[styles.teknisyenContainer, { backgroundColor: isDark ? '#1a3a5c' : '#e3f2fd' }]}>
-                                        <View style={[styles.teknisyenAvatar, { backgroundColor: isDark ? '#0d47a1' : '#fff' }]}>
-                                            <Ionicons name="person" size={14} color={colors.primary} />
+                                <View style={styles.talepContent}>
+                                    {/* Üst kısım */}
+                                    <View style={styles.talepHeader}>
+                                        <View style={[styles.kategoriContainer, { backgroundColor: isDark ? colors.inputBg : '#f5f5f5' }]}>
+                                            <Text style={[styles.kategoriText, { color: colors.textSecondary }]}>{talep.kategori}</Text>
                                         </View>
-                                        <Text style={[styles.teknisyenText, { color: isDark ? '#64b5f6' : '#1565c0' }]}>
-                                            <Text style={{ fontWeight: '400', color: colors.textSecondary }}>Teknisyen: </Text>
-                                            {talep.atananTeknisyenAdi}
+                                        <View style={[styles.durumBadge, { backgroundColor: isDark ? durum.bgDark : durum.bg }]}>
+                                            <Ionicons name={durum.icon as any} size={12} color={isDark ? durum.textDark : durum.text} />
+                                            <Text style={[styles.durumText, { color: isDark ? durum.textDark : durum.text }]}>
+                                                {durum.label}
+                                            </Text>
+                                        </View>
+                                    </View>
+
+                                    {/* Başlık */}
+                                    <Text style={[styles.talepBaslik, { color: colors.text }]}>{talep.baslik}</Text>
+
+                                    {/* Konum */}
+                                    <View style={styles.infoRow}>
+                                        <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
+                                        <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                                            {talep.projeAdi}
+                                            {talep.blokAdi ? ` • ${talep.blokAdi}` : ''}
+                                            {talep.daireNo ? ` • D.${talep.daireNo}` : ''}
                                         </Text>
                                     </View>
-                                ) : (
-                                    <View style={styles.statusMessageContainer}>
-                                        <Ionicons name="information-circle-outline" size={14} color={colors.textSecondary} />
-                                        <Text style={[styles.statusMessage, { color: colors.textSecondary }]}>{durum.message}</Text>
-                                    </View>
-                                )}
 
-                                {/* Alt kısım - Tarih */}
-                                <View style={[styles.talepFooter, { borderTopColor: isDark ? '#333' : '#f5f5f5' }]}>
-                                    <View style={styles.footerLeft}>
-                                        <Ionicons name="time-outline" size={12} color={colors.textMuted} />
-                                        <Text style={[styles.tarihText, { color: colors.textMuted }]}>{formatTarih(talep.olusturmaTarihi)}</Text>
-                                    </View>
-                                    {hasFoto && (
-                                        <View style={styles.fotoIndicator}>
-                                            <Ionicons name="image-outline" size={12} color={colors.textSecondary} />
-                                            <Text style={[styles.fotoCount, { color: colors.textSecondary }]}>{talep.fotograflar?.length}</Text>
+                                    {/* Teknisyen bilgisi veya durum mesajı */}
+                                    {talep.atananTeknisyenAdi ? (
+                                        <View style={[styles.teknisyenContainer, { backgroundColor: isDark ? '#1a3a5c' : '#e3f2fd' }]}>
+                                            <View style={[styles.teknisyenAvatar, { backgroundColor: isDark ? '#0d47a1' : '#fff' }]}>
+                                                <Ionicons name="person" size={14} color={colors.primary} />
+                                            </View>
+                                            <Text style={[styles.teknisyenText, { color: isDark ? '#64b5f6' : '#1565c0' }]}>
+                                                <Text style={{ fontWeight: '400', color: colors.textSecondary }}>Teknisyen: </Text>
+                                                {talep.atananTeknisyenAdi}
+                                            </Text>
+                                        </View>
+                                    ) : (
+                                        <View style={styles.statusMessageContainer}>
+                                            <Ionicons name="information-circle-outline" size={14} color={colors.textSecondary} />
+                                            <Text style={[styles.statusMessage, { color: colors.textSecondary }]}>{durum.message}</Text>
                                         </View>
                                     )}
+
+                                    {/* Alt kısım - Tarih */}
+                                    <View style={[styles.talepFooter, { borderTopColor: isDark ? '#333' : '#f5f5f5' }]}>
+                                        <View style={styles.footerLeft}>
+                                            <Ionicons name="time-outline" size={12} color={colors.textMuted} />
+                                            <Text style={[styles.tarihText, { color: colors.textMuted }]}>{formatTarih(talep.olusturmaTarihi)}</Text>
+                                        </View>
+                                        {hasFoto && (
+                                            <View style={styles.fotoIndicator}>
+                                                <Ionicons name="image-outline" size={12} color={colors.textSecondary} />
+                                                <Text style={[styles.fotoCount, { color: colors.textSecondary }]}>{talep.fotograflar?.length}</Text>
+                                            </View>
+                                        )}
+                                    </View>
                                 </View>
-                            </View>
-                        </TouchableOpacity>
+                            </TouchableOpacity>
+                        </AnimatedItem>
                     );
                 }}
             />
@@ -635,9 +722,16 @@ const styles = StyleSheet.create({
         fontSize: 14,
     },
     header: {
-        paddingTop: 50,
-        paddingBottom: 20,
+        paddingTop: 60,
+        paddingBottom: 25,
         paddingHorizontal: 20,
+        borderBottomLeftRadius: 30,
+        borderBottomRightRadius: 30,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 10,
+        elevation: 8,
     },
     headerTop: {
         flexDirection: 'row',
@@ -645,12 +739,20 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     headerTitle: {
-        fontSize: 22,
+        fontSize: 24,
         fontWeight: 'bold',
+        color: '#fff',
+        letterSpacing: 1,
     },
     headerSubtitle: {
         fontSize: 13,
+        color: 'rgba(255,255,255,0.8)',
         marginTop: 2,
+    },
+    refreshButton: {
+        padding: 10,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        borderRadius: 12,
     },
     settingsButton: {
         padding: 8,

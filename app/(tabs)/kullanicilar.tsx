@@ -14,6 +14,8 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import { AnimatedItem } from '../../components/AnimatedList';
+import { ListSkeleton } from '../../components/Skeleton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { createUser, getAllUsers, updateUser } from '../../firebaseConfig';
@@ -185,9 +187,12 @@ export default function KullanicilarScreen() {
 
     if (yukleniyor) {
         return (
-            <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
-                <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Yükleniyor...</Text>
+            <View style={[styles.container, { backgroundColor: colors.background }]}>
+                <StatusBar barStyle="light-content" />
+                <View style={[styles.header, { backgroundColor: colors.headerBg, marginBottom: 10 }]}>
+                    <View style={{ height: 100 }} />
+                </View>
+                <ListSkeleton count={5} type="user" />
             </View>
         );
     }
@@ -263,36 +268,38 @@ export default function KullanicilarScreen() {
                 renderItem={({ item }) => {
                     const rol = rolConfig[item.rol] || rolConfig.musteri;
                     return (
-                        <View style={[styles.userCard, { backgroundColor: colors.card }]}>
-                            <View style={[styles.userAvatar, { backgroundColor: rol.color + '20' }]}>
-                                <Ionicons name={rol.icon as any} size={24} color={rol.color} />
-                            </View>
-                            <View style={styles.userInfo}>
-                                <Text style={[styles.userName, { color: colors.text }]}>
-                                    {item.ad} {item.soyad}
-                                </Text>
-                                <Text style={[styles.userEmail, { color: colors.textSecondary }]}>{item.email}</Text>
-                                <View style={styles.userMeta}>
-                                    <View style={[styles.rolBadge, { backgroundColor: rol.color + '20' }]}>
-                                        <Text style={[styles.rolText, { color: rol.color }]}>{rol.label}</Text>
+                        <AnimatedItem index={0} delay={50} style={{ marginBottom: 10 }}>
+                            <View style={[styles.userCard, { backgroundColor: colors.card, marginBottom: 0 }]}>
+                                <View style={[styles.userAvatar, { backgroundColor: rol.color + '20' }]}>
+                                    <Ionicons name={rol.icon as any} size={24} color={rol.color} />
+                                </View>
+                                <View style={styles.userInfo}>
+                                    <Text style={[styles.userName, { color: colors.text }]}>
+                                        {item.ad} {item.soyad}
+                                    </Text>
+                                    <Text style={[styles.userEmail, { color: colors.textSecondary }]}>{item.email}</Text>
+                                    <View style={styles.userMeta}>
+                                        <View style={[styles.rolBadge, { backgroundColor: rol.color + '20' }]}>
+                                            <Text style={[styles.rolText, { color: rol.color }]}>{rol.label}</Text>
+                                        </View>
+                                        {item.kategori && (
+                                            <Text style={[styles.kategoriText, { color: colors.textMuted }]}>• {item.kategori}</Text>
+                                        )}
                                     </View>
-                                    {item.kategori && (
-                                        <Text style={[styles.kategoriText, { color: colors.textMuted }]}>• {item.kategori}</Text>
-                                    )}
+                                </View>
+                                <View style={styles.switchContainer}>
+                                    <Text style={[styles.switchLabel, { color: item.aktif ? '#4caf50' : '#f44336' }]}>
+                                        {item.aktif ? 'Aktif' : 'Pasif'}
+                                    </Text>
+                                    <Switch
+                                        value={item.aktif}
+                                        onValueChange={() => aktiflikDegistir(item)}
+                                        trackColor={{ false: '#ccc', true: '#81c784' }}
+                                        thumbColor={item.aktif ? '#4caf50' : '#f44336'}
+                                    />
                                 </View>
                             </View>
-                            <View style={styles.switchContainer}>
-                                <Text style={[styles.switchLabel, { color: item.aktif ? '#4caf50' : '#f44336' }]}>
-                                    {item.aktif ? 'Aktif' : 'Pasif'}
-                                </Text>
-                                <Switch
-                                    value={item.aktif}
-                                    onValueChange={() => aktiflikDegistir(item)}
-                                    trackColor={{ false: '#ccc', true: '#81c784' }}
-                                    thumbColor={item.aktif ? '#4caf50' : '#f44336'}
-                                />
-                            </View>
-                        </View>
+                        </AnimatedItem>
                     );
                 }}
             />

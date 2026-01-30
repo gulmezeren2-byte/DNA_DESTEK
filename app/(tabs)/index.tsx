@@ -1,6 +1,7 @@
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
@@ -18,6 +19,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Logo from '../../components/Logo';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { createTalep, getProjeler, uploadImage } from '../../firebaseConfig';
@@ -114,6 +116,20 @@ export default function HomeScreen() {
   const { user } = useAuth();
   const { isDark, colors } = useTheme();
   const router = useRouter();
+
+  const getRoleIcon = () => {
+    switch (user?.rol) {
+      case 'yonetim':
+        return <Ionicons name="briefcase" size={28} color="#7b1fa2" />;
+      case 'teknisyen':
+        return <MaterialCommunityIcons name="hard-hat" size={28} color="#ef6c00" />;
+      case 'musteri':
+      default:
+        return <Ionicons name="home" size={28} color="#1565c0" />;
+    }
+  };
+
+
 
   // Form state
   const [telefon, setTelefon] = useState('');
@@ -347,39 +363,36 @@ export default function HomeScreen() {
       <StatusBar barStyle="light-content" backgroundColor={colors.headerBg} />
 
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.headerBg }]}>
+      <LinearGradient
+        colors={['#1a3a5c', '#203a43', '#2c5364']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.header}
+      >
         <View style={styles.headerTop}>
-          <View>
-            {/* Logo and Branding */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              {/* Fallback text if logo fails, but we use Image here */}
-              {/* Note: Ensure logo.png is in assets folder */}
-              <Image
-                source={require('../../assets/logo.png')}
-                style={{ width: 140, height: 40 }}
-                resizeMode="contain"
-              />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Logo size="md" variant="glass" />
+            <View>
+              <Text style={styles.headerTitle}>DNA DESTEK</Text>
+              <Text style={styles.headerSubtitle}>Yapı & Teknik Çözüm Merkezi</Text>
             </View>
-            <Text style={styles.headerSubtitle}>Yapı & Teknik Çözüm Merkezi</Text>
           </View>
           <TouchableOpacity style={styles.settingsButton} onPress={() => router.push('/ayarlar')}>
-            <Ionicons name="settings-outline" size={24} color={colors.headerText} />
+            <Ionicons name="settings-outline" size={24} color="#fff" />
           </TouchableOpacity>
         </View>
 
         {/* User Card */}
-        <View style={[styles.userInfo, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.95)' }]}>
-          <View style={[styles.userAvatar, { backgroundColor: colors.primary }]}>
-            <Text style={styles.userAvatarText}>
-              {user?.ad ? user.ad.charAt(0).toUpperCase() : ''}{user?.soyad ? user.soyad.charAt(0).toUpperCase() : ''}
-            </Text>
+        <View style={[styles.userInfo, { backgroundColor: 'rgba(255,255,255,0.15)', borderColor: 'rgba(255,255,255,0.2)', borderWidth: 1 }]}>
+          <View style={[styles.userAvatar, { backgroundColor: '#fff' }]}>
+            {getRoleIcon()}
           </View>
           <View style={styles.userTextContainer}>
-            <Text style={[styles.userName, { color: isDark ? '#fff' : '#000' }]}>{user?.ad} {user?.soyad}</Text>
-            <Text style={[styles.userEmail, { color: isDark ? 'rgba(255,255,255,0.6)' : '#666' }]}>{user?.email}</Text>
+            <Text style={[styles.userName, { color: '#fff' }]}>{user?.ad} {user?.soyad}</Text>
+            <Text style={[styles.userEmail, { color: 'rgba(255,255,255,0.8)' }]}>{user?.email}</Text>
           </View>
         </View>
-      </View>
+      </LinearGradient>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.sectionHeader}>
@@ -533,14 +546,25 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingTop: 60, paddingBottom: 25, paddingHorizontal: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 15 },
-  headerTitle: { fontSize: 24, fontWeight: 'bold' },
-  headerSubtitle: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 4, marginLeft: 4 },
+  header: {
+    paddingTop: 60,
+    paddingBottom: 30,
+    paddingHorizontal: 20,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  headerTitle: { fontSize: 22, fontWeight: 'bold', color: '#fff', letterSpacing: 1 },
+  headerSubtitle: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
   settingsButton: { padding: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 12 },
-  userInfo: { flexDirection: 'row', alignItems: 'center', marginTop: 5, padding: 16, borderRadius: 20, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
-  userAvatar: { width: 54, height: 54, borderRadius: 27, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff' },
-  userAvatarText: { fontSize: 20, fontWeight: 'bold', color: '#fff' },
+  userInfo: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 20 },
+  userAvatar: { width: 54, height: 54, borderRadius: 27, justifyContent: 'center', alignItems: 'center' },
+  userAvatarText: { fontSize: 20, fontWeight: 'bold' },
   userTextContainer: { marginLeft: 16 },
   userName: { fontSize: 18, fontWeight: 'bold' },
   userEmail: { fontSize: 13 },

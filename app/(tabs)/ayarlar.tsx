@@ -1,7 +1,8 @@
+
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, getDocFromServer, setDoc } from 'firebase/firestore';
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
@@ -50,7 +51,12 @@ export default function AyarlarScreen() {
     const rolBilgisi = rolEtiketleri[user?.rol || 'musteri'];
 
     // Profil kaydet
+    // Profil kaydet
     const profilKaydet = async () => {
+        if (!user?.uid) {
+            toast.error('Oturum bilgisi alınamadı');
+            return;
+        }
         if (!ad.trim() || !soyad.trim()) {
             toast.warning('Ad ve soyad zorunludur');
             return;
@@ -58,22 +64,52 @@ export default function AyarlarScreen() {
 
         setProfilKaydediyor(true);
         try {
-            await updateDoc(doc(db, 'users', user!.uid), {
+            console.log('Profil güncelleme başladı:', user.uid);
+            const userRef = doc(db, 'users', user.uid);
+
+            // ADIM 1: Bağlantı Kontrolü (Sunucudan zorla oku)
+            try {
+                // Cache'i atlayıp direkt sunucuya gitmeye çalış
+                await getDocFromServer(userRef);
+            } catch (readError: any) {
+                console.error('Sunucu bağlantı testi başarısız:', readError);
+                throw new Error(`Sunucuya erişilemiyor (Bağlantı hatası): ${readError.code}`);
+            }
+
+            // ADIM 2: Yazma İşlemi
+            const updatePromise = setDoc(userRef, {
                 ad: ad.trim(),
                 soyad: soyad.trim(),
                 telefon: telefon.trim(),
+            }, { merge: true });
+
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Yazma işlemi zaman aşımına uğradı (15sn). Güvenlik duvarı veya ağ sorunu olabilir.')), 15000)
+            );
+
+            await Promise.race([updatePromise, timeoutPromise]);
+
+            // Context'i güncelle - Güvenli güncelleme
+            setUser({
+                ...user,
+                ad: ad.trim(),
+                soyad: soyad.trim(),
+                telefon: telefon.trim()
             });
 
-            // Context'i güncelle
-            setUser({ ...user!, ad: ad.trim(), soyad: soyad.trim(), telefon: telefon.trim() });
-
-            toast.success('Profil güncellendi!');
-
+            toast.success('Profil başarıyla güncellendi!');
             setProfilDuzenleme(false);
         } catch (error: any) {
-            toast.error('Hata: ' + error.message);
+            console.error('Profil güncelleme hatası:', error.code, error.message);
+
+            let msg = error.message || 'Güncelleme yapılamadı';
+            if (error.code === 'permission-denied') msg = 'Bu işlem için yetkiniz yok (Yazma izni reddedildi).';
+            if (error.code === 'unavailable') msg = 'Sunucuya ulaşılamıyor (Çevrimdışı).';
+
+            toast.error('Hata: ' + msg);
+        } finally {
+            setProfilKaydediyor(false);
         }
-        setProfilKaydediyor(false);
     };
 
     // Şifre değiştir

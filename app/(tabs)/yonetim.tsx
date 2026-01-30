@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -16,10 +17,12 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import AnimatedItem from '../../components/AnimatedList';
+import Logo from '../../components/Logo';
 import { ListSkeleton } from '../../components/Skeleton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { assignTalepToEkip, db, getActiveEkipler, getTalepler } from '../../firebaseConfig';
+import { assignTalepToEkip, db, getActiveEkipler, getTalepler, subscribeToTalepler } from '../../firebaseConfig';
 import { sendPushNotification } from '../../services/notificationService';
 import toast from '../../services/toastService';
 
@@ -140,8 +143,55 @@ export default function YonetimScreen() {
     };
 
     useEffect(() => {
-        verileriYukle();
-    }, [filtre]);
+        if (!user) return;
+
+        setYukleniyor(true);
+        // Realtime Subscription
+        const filters: any = {};
+        if (filtre === 'yeni') filters.durum = 'yeni';
+        if (filtre === 'atanmamis') filters.atanmamis = true;
+        if (filtre === 'acil') filters.oncelik = 'acil';
+
+        const unsubscribe = subscribeToTalepler(user.uid, user.rol, filters, (result) => {
+            if (result.success && result.talepler) {
+                // Realtime veriyi al (ilk 50 veya filtreli set)
+                // Pagination ile çakışmaması için basit mod: Sadece ilk yükleme ve güncellemeler realtime.
+                setTalepler(prev => {
+                    // Infinite Scroll verisini korumak zor, "Load More" yapıldığında realtime seti sadece başı güncellemeli.
+                    // Şimdilik basitçe ilk 50 güncellenir.
+                    // Eğer lastDoc varsa (yani loadMore yapıldıysa), kullanıcının listesi bozulmasın diye
+                    // sadece "yeni" veri geldiğinde ne yapmalı?
+                    // Burada en güvenli yol: Realtime sadece Taze Veriyi (ilk sayfa) yönetir.
+                    // Eğer daha fazla veri yüklendiyse bile, bu function sadece "result.talepler" (ilk 50) döner.
+                    // Bu durumda 51+ olanlar kaybolur mu? Evet.
+                    // Çözüm: Hibrit zor. infinite scroll varsa realtime'ı sadece "update" olarak kullanmak lazım (add/remove değil).
+                    // Veya basitçe: Realtime geldiğinde tüm listeyi yenile (ve hasMore'u güncelle).
+                    // Kulanıcı en aşağıdaysa ve liste yenilenirse yukarı zıplar mı? Evet.
+
+                    // Karar: Basit Realtime. Kullanıcı realtime lüksü için scroll pozisyonunu feda eder :) 
+                    // (Zaten 50 tane veri var filterlı görünümde, çok sorun olmaz).
+                    return result.talepler as Talep[];
+                });
+
+                if (result.talepler && result.talepler.length >= 50) {
+                    setLastDoc(result.talepler[result.talepler.length - 1].olusturmaTarihi);
+                } else {
+                    setLastDoc(null);
+                }
+
+                setYukleniyor(false);
+            }
+        });
+
+        // Ekipleri de yükleyelim (statik kalsın)
+        getActiveEkipler().then(res => {
+            if (res.success && res.ekipler) setEkipler(res.ekipler as Ekip[]);
+        });
+
+        return () => {
+            if (unsubscribe) unsubscribe();
+        };
+    }, [user, filtre]);
 
     const onRefresh = useCallback(() => {
         setRefreshing(true);
@@ -243,14 +293,22 @@ export default function YonetimScreen() {
         return (
             <View style={[styles.container, { backgroundColor: colors.background }]}>
                 <StatusBar barStyle="light-content" />
-                <View style={[styles.header, { backgroundColor: colors.headerBg }]}>
+                <LinearGradient
+                    colors={['#1a3a5c', '#203a43', '#2c5364']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.header}
+                >
                     <View style={styles.headerTop}>
-                        <View>
-                            <Text style={styles.headerTitle}>Yönetim Paneli</Text>
-                            <Text style={styles.headerSubtitle}>Yükleniyor...</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                            <Logo size="sm" variant="glass" />
+                            <View>
+                                <Text style={styles.headerTitle}>Yönetim Paneli</Text>
+                                <Text style={styles.headerSubtitle}>Yükleniyor...</Text>
+                            </View>
                         </View>
                     </View>
-                </View>
+                </LinearGradient>
                 <ListSkeleton count={5} type="talep" />
             </View>
         );
@@ -261,11 +319,19 @@ export default function YonetimScreen() {
             <StatusBar barStyle="light-content" />
 
             {/* Header */}
-            <View style={[styles.header, { backgroundColor: colors.headerBg }]}>
+            <LinearGradient
+                colors={['#1a3a5c', '#203a43', '#2c5364']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.header}
+            >
                 <View style={styles.headerTop}>
-                    <View>
-                        <Text style={styles.headerTitle}>Yönetim Paneli</Text>
-                        <Text style={styles.headerSubtitle}>Talep Yönetimi</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                        <Logo size="sm" variant="glass" />
+                        <View>
+                            <Text style={styles.headerTitle}>Yönetim Paneli</Text>
+                            <Text style={styles.headerSubtitle}>Talep Yönetimi</Text>
+                        </View>
                     </View>
                     <View style={styles.headerButtons}>
                         <TouchableOpacity style={styles.headerButton} onPress={() => router.push('/raporlar')}>
@@ -282,6 +348,7 @@ export default function YonetimScreen() {
                         </TouchableOpacity>
                     </View>
                 </View>
+
 
                 {/* Arama Çubuğu */}
                 <View style={styles.searchContainer}>
@@ -322,7 +389,7 @@ export default function YonetimScreen() {
                         <Text style={styles.statLabel}>Çözüldü</Text>
                     </TouchableOpacity>
                 </View>
-            </View>
+            </LinearGradient>
 
 
             <View style={[styles.filtreContainer, { backgroundColor: colors.card }]}>
@@ -360,65 +427,67 @@ export default function YonetimScreen() {
                         </View>
                     ) : null
                 }
-                renderItem={({ item: talep }) => {
+                renderItem={({ item: talep, index }) => {
                     const durum = durumConfig[talep.durum] || durumConfig.yeni;
                     return (
-                        <TouchableOpacity
-                            style={[styles.talepCard, { backgroundColor: colors.card }]}
-                            onPress={() => { setSeciliTalep(talep); setDetayModalVisible(true); }}
-                        >
-                            <View style={[styles.statusBar, { backgroundColor: isDark ? durum.textDark : durum.text }]} />
+                        <AnimatedItem index={index}>
+                            <TouchableOpacity
+                                style={[styles.talepCard, { backgroundColor: colors.card }]}
+                                onPress={() => { setSeciliTalep(talep); setDetayModalVisible(true); }}
+                            >
+                                <View style={[styles.statusBar, { backgroundColor: isDark ? durum.textDark : durum.text }]} />
 
-                            <View style={styles.talepContent}>
-                                <View style={styles.talepHeader}>
-                                    <View style={styles.headerBadges}>
-                                        <View style={[styles.kategoriBadge, { backgroundColor: isDark ? colors.inputBg : '#f5f5f5' }]}>
-                                            <Text style={[styles.kategoriText, { color: colors.textSecondary }]}>{talep.kategori}</Text>
+                                <View style={styles.talepContent}>
+                                    <View style={styles.talepHeader}>
+                                        <View style={styles.headerBadges}>
+                                            <View style={[styles.kategoriBadge, { backgroundColor: isDark ? colors.inputBg : '#f5f5f5' }]}>
+                                                <Text style={[styles.kategoriText, { color: colors.textSecondary }]}>{talep.kategori}</Text>
+                                            </View>
+                                            {talep.oncelik === 'acil' && (
+                                                <View style={styles.acilBadgeInline}>
+                                                    <Ionicons name="warning" size={10} color="#fff" />
+                                                    <Text style={styles.acilTextInline}>ACİL</Text>
+                                                </View>
+                                            )}
                                         </View>
-                                        {talep.oncelik === 'acil' && (
-                                            <View style={styles.acilBadgeInline}>
-                                                <Ionicons name="warning" size={10} color="#fff" />
-                                                <Text style={styles.acilTextInline}>ACİL</Text>
+                                        <View style={[styles.durumBadge, { backgroundColor: isDark ? durum.bgDark : durum.bg }]}>
+                                            <Ionicons name={durum.icon as any} size={12} color={isDark ? durum.textDark : durum.text} />
+                                            <Text style={[styles.durumText, { color: isDark ? durum.textDark : durum.text }]}>{durum.label}</Text>
+                                        </View>
+                                    </View>
+
+                                    <Text style={[styles.talepBaslik, { color: colors.text }]}>{talep.baslik}</Text>
+
+                                    <View style={styles.infoRow}>
+                                        <Ionicons name="person-outline" size={14} color={colors.textSecondary} />
+                                        <Text style={[styles.infoText, { color: colors.textSecondary }]}>{talep.musteriAdi}</Text>
+                                    </View>
+
+                                    <View style={styles.infoRow}>
+                                        <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
+                                        <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                                            {talep.projeAdi} {talep.blokAdi && `• ${talep.blokAdi}`}
+                                        </Text>
+                                    </View>
+
+                                    {talep.atananTeknisyenAdi && (
+                                        <View style={[styles.teknisyenInfo, { backgroundColor: isDark ? '#1a3a5c' : '#e3f2fd' }]}>
+                                            <Ionicons name="construct" size={14} color={colors.primary} />
+                                            <Text style={[styles.teknisyenText, { color: colors.primary }]}>{talep.atananTeknisyenAdi}</Text>
+                                        </View>
+                                    )}
+
+                                    <View style={[styles.talepFooter, { borderTopColor: colors.border }]}>
+                                        <Text style={[styles.tarihText, { color: colors.textMuted }]}>{formatTarih(talep.olusturmaTarihi)}</Text>
+                                        {!talep.atananTeknisyenId && (
+                                            <View style={[styles.atanmamisBadge, { backgroundColor: isDark ? '#3a2a1a' : '#fff3e0' }]}>
+                                                <Text style={{ color: isDark ? '#ffb74d' : '#ef6c00', fontSize: 10, fontWeight: '600' }}>Atanmamış</Text>
                                             </View>
                                         )}
                                     </View>
-                                    <View style={[styles.durumBadge, { backgroundColor: isDark ? durum.bgDark : durum.bg }]}>
-                                        <Ionicons name={durum.icon as any} size={12} color={isDark ? durum.textDark : durum.text} />
-                                        <Text style={[styles.durumText, { color: isDark ? durum.textDark : durum.text }]}>{durum.label}</Text>
-                                    </View>
                                 </View>
-
-                                <Text style={[styles.talepBaslik, { color: colors.text }]}>{talep.baslik}</Text>
-
-                                <View style={styles.infoRow}>
-                                    <Ionicons name="person-outline" size={14} color={colors.textSecondary} />
-                                    <Text style={[styles.infoText, { color: colors.textSecondary }]}>{talep.musteriAdi}</Text>
-                                </View>
-
-                                <View style={styles.infoRow}>
-                                    <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
-                                    <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                                        {talep.projeAdi} {talep.blokAdi && `• ${talep.blokAdi}`}
-                                    </Text>
-                                </View>
-
-                                {talep.atananTeknisyenAdi && (
-                                    <View style={[styles.teknisyenInfo, { backgroundColor: isDark ? '#1a3a5c' : '#e3f2fd' }]}>
-                                        <Ionicons name="construct" size={14} color={colors.primary} />
-                                        <Text style={[styles.teknisyenText, { color: colors.primary }]}>{talep.atananTeknisyenAdi}</Text>
-                                    </View>
-                                )}
-
-                                <View style={[styles.talepFooter, { borderTopColor: colors.border }]}>
-                                    <Text style={[styles.tarihText, { color: colors.textMuted }]}>{formatTarih(talep.olusturmaTarihi)}</Text>
-                                    {!talep.atananTeknisyenId && (
-                                        <View style={[styles.atanmamisBadge, { backgroundColor: isDark ? '#3a2a1a' : '#fff3e0' }]}>
-                                            <Text style={{ color: isDark ? '#ffb74d' : '#ef6c00', fontSize: 10, fontWeight: '600' }}>Atanmamış</Text>
-                                        </View>
-                                    )}
-                                </View>
-                            </View>
-                        </TouchableOpacity>
+                            </TouchableOpacity>
+                        </AnimatedItem>
                     );
                 }}
             />
@@ -611,83 +680,423 @@ export default function YonetimScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1 },
-    loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    loadingText: { marginTop: 12, fontSize: 14 },
-    header: { paddingTop: 50, paddingBottom: 20, paddingHorizontal: 20 },
-    headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    headerTitle: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
-    headerSubtitle: { fontSize: 13, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
-    settingsButton: { padding: 8 },
-    statsContainer: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 20, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 12, padding: 16 },
-    statItem: { alignItems: 'center' },
-    statNumber: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
-    statLabel: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 4 },
-    statDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.2)' },
-    filtreContainer: { flexDirection: 'row', marginHorizontal: 16, marginTop: 16, borderRadius: 10, padding: 4 },
-    filtreButon: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
-    filtreText: { fontSize: 12, fontWeight: '600' },
-    content: { flex: 1, padding: 16 },
-    emptyContainer: { alignItems: 'center', paddingVertical: 60 },
-    emptyText: { fontSize: 15, marginTop: 12 },
-    talepCard: { borderRadius: 14, marginBottom: 12, overflow: 'hidden', flexDirection: 'row' },
-    statusBar: { width: 4 },
-    talepContent: { flex: 1, padding: 14 },
-    talepHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-    kategoriBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
-    kategoriText: { fontSize: 11, fontWeight: '600' },
-    durumBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, gap: 4 },
-    durumText: { fontSize: 11, fontWeight: '600' },
-    talepBaslik: { fontSize: 16, fontWeight: '600', marginBottom: 8 },
-    infoRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
-    infoText: { fontSize: 12 },
-    teknisyenInfo: { flexDirection: 'row', alignItems: 'center', gap: 6, padding: 8, borderRadius: 8, marginTop: 8 },
-    teknisyenText: { fontSize: 12, fontWeight: '500' },
-    talepFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, marginTop: 8, borderTopWidth: 1 },
-    tarihText: { fontSize: 11 },
-    atanmamisBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-    acilBadge: { position: 'absolute', top: 8, right: 8, flexDirection: 'row', alignItems: 'center', backgroundColor: '#c62828', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, gap: 4, zIndex: 1 },
-    acilText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
-    acilBadgeLarge: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', backgroundColor: '#c62828', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, gap: 6 },
-    acilTextLarge: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-    detayModal: { borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '90%', padding: 20 },
-    modalHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
-    detayHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
-    detayBaslik: { fontSize: 20, fontWeight: 'bold' },
-    musteriCard: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 12, marginBottom: 16, gap: 12 },
-    musteriInfo: { flex: 1 },
-    musteriAdi: { fontSize: 16, fontWeight: '600' },
-    musteriTelefon: { fontSize: 14, marginTop: 4 },
-    detaySection: { marginBottom: 18 },
-    detaySectionTitle: { fontSize: 14, fontWeight: '600', marginBottom: 8 },
-    detayInfo: { fontSize: 15 },
-    detayAciklama: { fontSize: 14, lineHeight: 22 },
-    oncelikButonlar: { flexDirection: 'row', gap: 12 },
-    oncelikButon: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 12, borderRadius: 10, borderWidth: 2, gap: 8 },
-    teknisyenCard: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 10, gap: 10 },
-    teknisyenName: { flex: 1, fontSize: 15, fontWeight: '600' },
-    degistirButon: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
-    ataButon: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 14, borderRadius: 12, gap: 8 },
-    ataButonText: { color: '#fff', fontSize: 15, fontWeight: '600' },
-    atamaModal: { borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '70%', paddingTop: 20 },
-    atamaHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#eee' },
-    atamaTitle: { fontSize: 18, fontWeight: '600' },
-    emptyTeknisyen: { alignItems: 'center', padding: 40 },
-    teknisyenItem: { flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1 },
-    teknisyenAvatar: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
-    teknisyenAvatarText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-    teknisyenItemInfo: { flex: 1, marginLeft: 12 },
-    teknisyenItemName: { fontSize: 15, fontWeight: '600' },
-    teknisyenKategori: { fontSize: 12, marginTop: 2 },
-    headerBadges: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    acilBadgeInline: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#c62828', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, gap: 3 },
-    acilTextInline: { color: '#fff', fontSize: 9, fontWeight: 'bold' },
-    detayFotoScroll: { flexDirection: 'row', gap: 12 },
-    detayFoto: { width: 120, height: 120, borderRadius: 8, backgroundColor: '#eee' },
+    container: {
+        flex: 1,
+    },
+    header: {
+        paddingTop: 60,
+        paddingBottom: 20,
+        paddingHorizontal: 20,
+        borderBottomLeftRadius: 30,
+        borderBottomRightRadius: 30,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+        elevation: 5,
+        zIndex: 10,
+    },
+    headerTop: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    headerTitle: {
+        fontSize: 28,
+        fontWeight: 'bold',
+        color: '#fff',
+    },
+    headerSubtitle: {
+        fontSize: 14,
+        color: 'rgba(255,255,255,0.8)',
+        marginTop: 5,
+    },
+    headerButtons: {
+        flexDirection: 'row',
+        gap: 10,
+    },
+    headerButton: {
+        padding: 10,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        borderRadius: 12,
+    },
+    searchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.15)',
+        borderRadius: 15,
+        paddingHorizontal: 15,
+        height: 50,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.2)',
+    },
+    searchIcon: {
+        marginRight: 10,
+    },
+    searchInput: {
+        flex: 1,
+        color: '#fff',
+        fontSize: 16,
+    },
+    statsContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderRadius: 20,
+        padding: 15,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
+    },
+    statItem: {
+        alignItems: 'center',
+        flex: 1,
+    },
+    statNumber: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#fff',
+        marginBottom: 4,
+    },
+    statLabel: {
+        fontSize: 12,
+        color: 'rgba(255,255,255,0.7)',
+    },
+    statDivider: {
+        width: 1,
+        height: 30,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+    },
+    filtreContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        paddingVertical: 15,
+        paddingHorizontal: 10,
+        marginBottom: 5,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(0,0,0,0.05)',
+    },
+    filtreButon: {
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+        borderRadius: 20,
+        backgroundColor: 'rgba(0,0,0,0.05)',
+    },
+    filtreText: {
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    content: {
+        flex: 1,
+        paddingHorizontal: 20,
+        paddingTop: 10,
+    },
+    listContent: {
+        paddingBottom: 100,
+    },
+    emptyContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: 50,
+        opacity: 0.7,
+    },
+    emptyText: {
+        marginTop: 15,
+        fontSize: 16,
+        textAlign: 'center',
+    },
+    talepCard: {
+        borderRadius: 16,
+        marginBottom: 16,
+        overflow: 'hidden',
+        boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.05)',
+        elevation: 3,
+        borderWidth: 1,
+        borderColor: 'rgba(0,0,0,0.05)',
+    },
+    statusBar: {
+        height: 4,
+        width: '100%',
+    },
+    talepContent: {
+        padding: 16,
+    },
+    talepHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: 12,
+    },
+    headerBadges: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    kategoriBadge: {
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+    },
+    kategoriText: {
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    acilBadgeInline: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#d32f2f',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+        gap: 4,
+    },
+    acilTextInline: {
+        color: '#fff',
+        fontSize: 10,
+        fontWeight: 'bold',
+    },
+    durumBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+        gap: 4,
+    },
+    durumText: {
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    talepBaslik: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        marginBottom: 12,
+        lineHeight: 22,
+    },
+    infoRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 6,
+        gap: 6,
+    },
+    infoText: {
+        fontSize: 14,
+    },
+    teknisyenInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 8,
+        borderRadius: 8,
+        marginTop: 8,
+        gap: 6,
+    },
+    teknisyenText: {
+        fontSize: 13,
+        fontWeight: '600',
+    },
+    talepFooter: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: 12,
+        paddingTop: 12,
+        borderTopWidth: 1,
+    },
+    tarihText: {
+        fontSize: 12,
+    },
+    atanmamisBadge: {
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 4,
+    },
+    detayModal: {
+        flex: 1,
+        marginTop: 60,
+        borderTopLeftRadius: 30,
+        borderTopRightRadius: 30,
+        padding: 24,
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
+    },
+    modalHandle: {
+        width: 40,
+        height: 4,
+        borderRadius: 2,
+        alignSelf: 'center',
+        marginBottom: 20,
+    },
+    detayHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: 20,
+    },
+    acilBadgeLarge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#d32f2f',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+        alignSelf: 'flex-start',
+        gap: 6,
+    },
+    acilTextLarge: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: 'bold',
+    },
+    detayBaslik: {
+        fontSize: 22,
+        fontWeight: 'bold',
+        lineHeight: 30,
+    },
+    musteriCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+        borderRadius: 16,
+        marginBottom: 20,
+        gap: 16,
+    },
+    musteriInfo: {
+        flex: 1,
+    },
+    musteriAdi: {
+        fontSize: 18,
+        fontWeight: '600',
+        marginBottom: 4,
+    },
+    musteriTelefon: {
+        fontSize: 14,
+        fontWeight: '500',
+    },
+    detaySection: {
+        marginBottom: 24,
+    },
+    detaySectionTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        marginBottom: 10,
+    },
+    detayInfo: {
+        fontSize: 16,
+        lineHeight: 24,
+    },
+    detayAciklama: {
+        fontSize: 15,
+        lineHeight: 24,
+        fontStyle: 'italic',
+    },
+    detayFotoScroll: {
+        paddingRight: 20,
+        gap: 10,
+    },
+    detayFoto: {
+        width: 120,
+        height: 120,
+        borderRadius: 12,
+    },
+    oncelikButonlar: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    oncelikButon: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+        borderWidth: 2,
+        borderRadius: 12,
+        gap: 8,
+    },
+    teknisyenCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: 12,
+        borderRadius: 12,
+    },
+    teknisyenName: {
+        flex: 1,
+        fontSize: 16,
+        fontWeight: '600',
+        marginLeft: 10,
+    },
+    degistirButon: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 8,
+    },
+    ataButon: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+        borderRadius: 12,
+        gap: 8,
+    },
+    ataButonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    atamaModal: {
+        backgroundColor: '#fff',
+        marginTop: 'auto',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        padding: 24,
+        maxHeight: '80%',
+    },
+    atamaHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    atamaTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+    },
+    emptyTeknisyen: {
+        alignItems: 'center',
+        padding: 40,
+    },
+    teknisyenItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 16,
+        borderBottomWidth: 1,
+    },
+    teknisyenAvatar: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    teknisyenItemInfo: {
+        flex: 1,
+        marginLeft: 12,
+    },
+    teknisyenItemName: {
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    teknisyenKategori: {
+        fontSize: 13,
+    },
     fullScreenModal: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.9)',
+        backgroundColor: 'black',
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -695,16 +1104,13 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: 40,
         right: 20,
-        zIndex: 1,
+        zIndex: 10,
         padding: 10,
     },
     fullScreenImage: {
         width: '100%',
-        height: '80%',
+        height: '100%',
     },
-    searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 10, marginHorizontal: 20, marginBottom: 16, paddingHorizontal: 12 },
-    searchIcon: { marginRight: 8 },
-    searchInput: { flex: 1, paddingVertical: 10, color: '#fff', fontSize: 14 },
-    headerButtons: { flexDirection: 'row', alignItems: 'center' },
-    headerButton: { padding: 8, marginLeft: 4 },
 });
+
+

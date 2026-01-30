@@ -134,7 +134,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         return userData as User | null;
     };
 
-    const value: AuthContextType = {
+    const value: AuthContextType = React.useMemo(() => ({
         user,
         loading,
         error,
@@ -146,7 +146,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         isTeknisyen: user?.rol === 'teknisyen',
         isYonetim: user?.rol === 'yonetim',
         setUser,
-    };
+    }), [user, loading, error]);
 
     return (
         <AuthContext.Provider value={value}>

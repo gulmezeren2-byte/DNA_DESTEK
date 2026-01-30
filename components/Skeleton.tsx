@@ -204,7 +204,53 @@ export const DetailSkeleton: React.FC = () => {
     );
 };
 
+
+/**
+ * Report Screen Skeleton
+ */
+export const ReportSkeleton: React.FC = () => {
+    return (
+        <View style={styles.container}>
+            {/* Header */}
+            <View style={styles.dashboardHeader}>
+                <View>
+                    <Skeleton width={120} height={28} borderRadius={8} />
+                    <Skeleton width={200} height={14} style={{ marginTop: 6 }} />
+                </View>
+                <Skeleton width={32} height={32} borderRadius={16} />
+            </View>
+
+            {/* Filters */}
+            <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 20, marginBottom: 20 }}>
+                <Skeleton width={80} height={36} borderRadius={20} />
+                <Skeleton width={80} height={36} borderRadius={20} />
+                <Skeleton width={80} height={36} borderRadius={20} />
+            </View>
+
+            {/* Summary Cards */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', paddingHorizontal: 20, marginBottom: 20 }}>
+                <Skeleton width="48%" height={100} borderRadius={16} style={{ marginBottom: 12 }} />
+                <Skeleton width="48%" height={100} borderRadius={16} style={{ marginBottom: 12 }} />
+                <Skeleton width="48%" height={100} borderRadius={16} />
+                <Skeleton width="48%" height={100} borderRadius={16} />
+            </View>
+
+            {/* Charts */}
+            <View style={{ paddingHorizontal: 20 }}>
+                <Skeleton width="100%" height={180} borderRadius={20} style={{ marginBottom: 16 }} />
+                <Skeleton width="100%" height={220} borderRadius={20} />
+            </View>
+        </View>
+    );
+};
+
 const styles = StyleSheet.create({
+    // Container
+    container: {
+        flex: 1,
+        padding: 20,
+    },
+
     // Talep Card
     talepCard: {
         borderRadius: 14,
