@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+    ActivityIndicator,
     FlatList,
     Image,
     Modal,
@@ -68,6 +69,11 @@ export default function YonetimScreen() {
     const [ekipler, setEkipler] = useState<Ekip[]>([]);
     const [yukleniyor, setYukleniyor] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+
+    // Pagination State
+    const [lastDoc, setLastDoc] = useState<any>(null);
+    const [loadingMore, setLoadingMore] = useState(false);
+
     const [seciliTalep, setSeciliTalep] = useState<Talep | null>(null);
     const [detayModalVisible, setDetayModalVisible] = useState(false);
     const [atamaModalVisible, setAtamaModalVisible] = useState(false);
@@ -76,8 +82,9 @@ export default function YonetimScreen() {
     const [aramaMetni, setAramaMetni] = useState('');
     const [tamEkranFoto, setTamEkranFoto] = useState<string | null>(null);
 
-    const verileriYukle = async () => {
-        setYukleniyor(true);
+    // Initial Load / Filter Change
+    const verileriYukle = async (isRefresh = false) => {
+        if (!isRefresh) setYukleniyor(true);
         try {
             // Filtreleri hazırla
             const queryOptions: any = {};
@@ -85,13 +92,15 @@ export default function YonetimScreen() {
             if (filtre === 'atanmamis') queryOptions.atanmamis = true;
             if (filtre === 'acil') queryOptions.oncelik = 'acil';
 
-            // Talepleri yükle
-            const result = await getTalepler(user?.uid || '', 'yonetim', queryOptions); // Rolü yonetim varsayıyoruz burası için
+            // İlk sayfa yükle (lastDoc: null)
+            const result = await getTalepler(user?.uid || '', 'yonetim', queryOptions, null, 20);
+
             if (result.success && result.talepler) {
                 setTalepler(result.talepler as Talep[]);
+                setLastDoc(result.lastVisible);
             }
 
-            // Ekipleri yükle (Sadece ilk açılışta veya refresh'te gerekebilir ama hızlıdır)
+            // Ekipleri yükle
             const ekipResult = await getActiveEkipler();
             if (ekipResult.success && ekipResult.ekipler) {
                 setEkipler(ekipResult.ekipler as Ekip[]);
@@ -104,14 +113,40 @@ export default function YonetimScreen() {
         setRefreshing(false);
     };
 
+    // Load More (Infinite Scroll)
+    const dahaFazlaYukle = async () => {
+        if (loadingMore || !lastDoc) return;
+
+        setLoadingMore(true);
+        try {
+            const queryOptions: any = {};
+            if (filtre === 'yeni') queryOptions.durum = 'yeni';
+            if (filtre === 'atanmamis') queryOptions.atanmamis = true;
+            if (filtre === 'acil') queryOptions.oncelik = 'acil';
+
+            // Sonraki sayfa (lastDoc kullanarak)
+            const result = await getTalepler(user?.uid || '', 'yonetim', queryOptions, lastDoc, 20);
+
+            if (result.success && result.talepler && result.talepler.length > 0) {
+                setTalepler(prev => [...prev, ...result.talepler]); // Append data
+                setLastDoc(result.lastVisible);
+            } else {
+                setLastDoc(null); // End of list
+            }
+        } catch (error) {
+            console.error('Sayfalama hatası:', error);
+        }
+        setLoadingMore(false);
+    };
+
     useEffect(() => {
         verileriYukle();
-    }, [filtre]); // Filtre değişince verileri yeniden çek
+    }, [filtre]);
 
     const onRefresh = useCallback(() => {
         setRefreshing(true);
-        verileriYukle();
-    }, []);
+        verileriYukle(true);
+    }, [filtre]);
 
     const formatTarih = (timestamp: { seconds: number }) => {
         if (!timestamp?.seconds) return '-';
@@ -314,6 +349,9 @@ export default function YonetimScreen() {
                 data={listelenecekTalepler}
                 keyExtractor={(item) => item.id}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
+                onEndReached={dahaFazlaYukle}
+                onEndReachedThreshold={0.5}
+                ListFooterComponent={loadingMore ? <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 20 }} /> : <View style={{ height: 30 }} />}
                 ListEmptyComponent={
                     !yukleniyor ? (
                         <View style={styles.emptyContainer}>
@@ -383,7 +421,6 @@ export default function YonetimScreen() {
                         </TouchableOpacity>
                     );
                 }}
-                ListFooterComponent={<View style={{ height: 30 }} />}
             />
 
             {/* Detay Modal */}

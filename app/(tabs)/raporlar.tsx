@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getCountFromServer, getDocs, orderBy, query, where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -61,6 +61,10 @@ export default function RaporlarScreen() {
     const [refreshing, setRefreshing] = useState(false);
     const [talepler, setTalepler] = useState<Talep[]>([]);
     const [ekipler, setEkipler] = useState<Ekip[]>([]);
+    const [filterDays, setFilterDays] = useState(30);
+
+    // Global Counts State
+    const [globalStats, setGlobalStats] = useState({ toplam: 0, acik: 0, cozuldu: 0, acil: 0 });
 
     // Yönetici kontrolü
     useEffect(() => {
@@ -71,10 +75,45 @@ export default function RaporlarScreen() {
 
     const verileriYukle = async () => {
         try {
-            const talepSnapshot = await getDocs(collection(db, 'talepler'));
+            const talesRef = collection(db, 'talepler');
+
+            // 1. Global İstatistikleri Çek (Server-Side Count)
+            // Not: Firestore free tier'da aggregate queries limitli olabilir ama çok daha performanslıdır.
+            // Eğer maliyet endişesi varsa bunlar da önbelleğe alınabilir.
+            const qTotal = query(talesRef);
+            const qOpen = query(talesRef, where('durum', 'in', ['yeni', 'atandi', 'islemde', 'beklemede']));
+            const qSolved = query(talesRef, where('durum', '==', 'cozuldu'));
+            const qUrgent = query(talesRef, where('oncelik', '==', 'acil'));
+
+            const [snapTotal, snapOpen, snapSolved, snapUrgent] = await Promise.all([
+                getCountFromServer(qTotal),
+                getCountFromServer(qOpen),
+                getCountFromServer(qSolved),
+                getCountFromServer(qUrgent)
+            ]);
+
+            setGlobalStats({
+                toplam: snapTotal.data().count,
+                acik: snapOpen.data().count,
+                cozuldu: snapSolved.data().count,
+                acil: snapUrgent.data().count
+            });
+
+            // 2. Grafikler İçin Veri Çek (Date Range Filtered)
+            const cutoffDate = new Date();
+            cutoffDate.setDate(cutoffDate.getDate() - filterDays);
+
+            const qCharts = query(
+                talesRef,
+                where('olusturmaTarihi', '>=', cutoffDate),
+                orderBy('olusturmaTarihi', 'desc')
+            );
+
+            const talepSnapshot = await getDocs(qCharts);
             const talepData = talepSnapshot.docs.map(d => ({ id: d.id, ...d.data() })) as Talep[];
             setTalepler(talepData);
 
+            // 3. Ekipleri Yükle
             const ekipResult = await getAllEkipler();
             if (ekipResult.success && ekipResult.ekipler) {
                 setEkipler(ekipResult.ekipler as Ekip[]);
@@ -88,16 +127,21 @@ export default function RaporlarScreen() {
 
     useEffect(() => {
         verileriYukle();
-    }, []);
+    }, [filterDays]); // Filtre değişince yeniden yükle
 
-    // İstatistik Hesaplamaları
+    // İstatistik Hesaplamaları (Grafikler için sadece filtrelenmiş veri kullanılır)
+    // Global kartlar için globalStats kullanılır
+    const globalCozumOrani = globalStats.toplam > 0 ? Math.round((globalStats.cozuldu / globalStats.toplam) * 100) : 0;
+
+
+    // İstatistik Hesaplamaları (Filtrelenmiş veri için local stats)
     const toplam = talepler.length;
     const acik = talepler.filter(t => !['cozuldu', 'iptal'].includes(t.durum)).length;
     const cozuldu = talepler.filter(t => t.durum === 'cozuldu').length;
     const iptal = talepler.filter(t => t.durum === 'iptal').length;
     const acil = talepler.filter(t => t.oncelik === 'acil').length;
 
-    // Güvenli çözüm oranı hesabı
+    // Filtrelenmiş dönem çözüm oranı
     let hesaplananOran = 0;
     if (toplam > 0) {
         hesaplananOran = (cozuldu / toplam) * 100;
@@ -175,23 +219,55 @@ export default function RaporlarScreen() {
         return ekip ? ekip.renk : colors.primary;
     };
 
-    // Son 7 Gün Trend (Line Chart)
+    // Trend Chart (Dinamik)
     const simdi = Date.now();
     const gunlukTalepler: number[] = [];
-    for (let i = 6; i >= 0; i--) {
+    const labels: string[] = [];
+
+    // Grafikte her zaman makul sayıda nokta göster (max 7-10)
+    const step = Math.ceil(filterDays / 7);
+
+    for (let i = filterDays - 1; i >= 0; i--) {
         const gunBaslangic = simdi - (i + 1) * 24 * 60 * 60 * 1000;
         const gunBitis = simdi - i * 24 * 60 * 60 * 1000;
+
+        // Sadece seçilen noktaları hesapla veya hepsini hesapla ama sadece bazılarını etikete koy
+        // Hepsini hesaplamak zorundayız ki grafik doğru olsun
         const sayi = talepler.filter(t => {
             if (!t.olusturmaTarihi) return false;
             const tarih = t.olusturmaTarihi.seconds * 1000;
             return tarih >= gunBaslangic && tarih < gunBitis;
         }).length;
+
         gunlukTalepler.push(sayi);
+
+        if (i % step === 0) {
+            const d = new Date(gunBitis);
+            labels.push(`${d.getDate()}/${d.getMonth() + 1}`);
+        }
     }
 
+    // Chart Kit labels limiti yok, manuel handle gerekir.
+    // React Native Chart Kit, veri sayısı kadar label bekler ya da eşit aralıklar koyar.
+    // Biz burada tüm veriyi verip, label'ları sadeleştirmeyi deneyebiliriz ama library buna tam izin vermeyebilir.
+    // Basit çözüm: Son 7 günü göster, ya da veri setini "sample" yap.
+    // Kullanıcı "Son 30 Gün" seçtiyse, grafikte 30 nokta olsun ama labellar az olsun demek zor.
+    // Bu kütüphanede `labels` array uzunluğu `data` ile aynı olmalı diye bir kural yok ama genellikle eşleşir.
+    // Optimize: Veriyi sıkıştır (3 günde bir topla) -> Bu trendi bozar.
+
+    // Karar: 30 gün için 30 nokta gösterelim, etiketleri boş string yaparak gizleyelim.
+    const chartLabels = gunlukTalepler.map((_, index) => {
+        // Sadece belirli aralıklarla tarih göster
+        if (index % step === 0 || index === gunlukTalepler.length - 1) {
+            const dateVal = new Date(simdi - (filterDays - 1 - index) * 24 * 60 * 60 * 1000);
+            return `${dateVal.getDate()}`;
+        }
+        return '';
+    });
+
     const lineData = {
-        labels: ['6g', '5g', '4g', '3g', '2g', 'Dün', 'Bugün'],
-        datasets: [{ data: gunlukTalepler.some(g => g > 0) ? gunlukTalepler : [0, 0, 0, 0, 0, 0, 0] }],
+        labels: chartLabels,
+        datasets: [{ data: gunlukTalepler.length > 0 ? gunlukTalepler : [0] }],
     };
 
     // Progress Chart Data
@@ -253,36 +329,58 @@ export default function RaporlarScreen() {
                 showsVerticalScrollIndicator={false}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); verileriYukle(); }} colors={[colors.primary]} />}
             >
-                {/* Özet Kartlar */}
+                {/* Filtre Butonları */}
+                <View style={styles.filterContainer}>
+                    {[7, 30, 90].map((day) => (
+                        <TouchableOpacity
+                            key={day}
+                            style={[
+                                styles.filterButton,
+                                filterDays === day && { backgroundColor: colors.primary },
+                                { borderColor: colors.border }
+                            ]}
+                            onPress={() => setFilterDays(day)}
+                        >
+                            <Text style={[
+                                styles.filterText,
+                                filterDays === day ? { color: '#fff' } : { color: colors.text }
+                            ]}>
+                                Son {day} Gün
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+
+                {/* Özet Kartlar (Global Stats) */}
                 <View style={styles.summaryContainer}>
                     <View style={[styles.summaryCard, { backgroundColor: '#818cf8' }]}>
                         <Ionicons name="documents" size={28} color="#fff" />
-                        <Text style={styles.summaryNumber}>{toplam}</Text>
-                        <Text style={styles.summaryLabel}>Toplam Talep</Text>
+                        <Text style={styles.summaryNumber}>{globalStats.toplam}</Text>
+                        <Text style={styles.summaryLabel}>Toplam (Global)</Text>
                     </View>
                     <View style={[styles.summaryCard, { backgroundColor: '#f59e0b' }]}>
                         <Ionicons name="time" size={28} color="#fff" />
-                        <Text style={styles.summaryNumber}>{acik}</Text>
+                        <Text style={styles.summaryNumber}>{globalStats.acik}</Text>
                         <Text style={styles.summaryLabel}>Açık Talep</Text>
                     </View>
                     <View style={[styles.summaryCard, { backgroundColor: '#10b981' }]}>
                         <Ionicons name="checkmark-circle" size={28} color="#fff" />
-                        <Text style={styles.summaryNumber}>{cozuldu}</Text>
+                        <Text style={styles.summaryNumber}>{globalStats.cozuldu}</Text>
                         <Text style={styles.summaryLabel}>Çözüldü</Text>
                     </View>
                     <View style={[styles.summaryCard, { backgroundColor: '#ef4444' }]}>
                         <Ionicons name="alert-circle" size={28} color="#fff" />
-                        <Text style={styles.summaryNumber}>{acil}</Text>
+                        <Text style={styles.summaryNumber}>{globalStats.acil}</Text>
                         <Text style={styles.summaryLabel}>Acil</Text>
                     </View>
                 </View>
 
                 {/* Çözüm Oranı Progress */}
                 <View style={[styles.chartCard, { backgroundColor: colors.card }]}>
-                    <Text style={[styles.chartTitle, { color: colors.text }]}>🎯 Çözüm Başarı Oranı</Text>
+                    <Text style={[styles.chartTitle, { color: colors.text }]}>🎯 Genel Başarı Oranı</Text>
                     <View style={styles.progressContainer}>
                         <ProgressChart
-                            data={progressData}
+                            data={{ labels: ['Çözüm'], data: [globalCozumOrani / 100 || 0] }}
                             width={screenWidth - 80}
                             height={140}
                             strokeWidth={16}
@@ -295,15 +393,15 @@ export default function RaporlarScreen() {
                             style={styles.chart}
                         />
                         <View style={styles.progressOverlay}>
-                            <Text style={[styles.progressPercent, { color: '#10b981' }]}>{cozumOrani}%</Text>
+                            <Text style={[styles.progressPercent, { color: '#10b981' }]}>{globalCozumOrani}%</Text>
                             <Text style={[styles.progressLabel, { color: colors.textSecondary }]}>Başarı</Text>
                         </View>
                     </View>
                 </View>
 
-                {/* Son 7 Gün Trend */}
+                {/* Son X Gün Trend */}
                 <View style={[styles.chartCard, { backgroundColor: colors.card }]}>
-                    <Text style={[styles.chartTitle, { color: colors.text }]}>📈 Son 7 Günlük Trend</Text>
+                    <Text style={[styles.chartTitle, { color: colors.text }]}>📈 Son {filterDays} Günlük Aktivite</Text>
                     <LineChart
                         data={lineData}
                         width={screenWidth - 48}
@@ -445,6 +543,17 @@ const styles = StyleSheet.create({
     headerTitle: { fontSize: 24, fontWeight: '700', color: '#fff' },
     headerSubtitle: { fontSize: 13, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
     content: { flex: 1, padding: 16 },
+
+    // Filter
+    filterContainer: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+    filterButton: {
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+        borderRadius: 20,
+        borderWidth: 1,
+        backgroundColor: 'transparent'
+    },
+    filterText: { fontSize: 13, fontWeight: '600' },
 
     // Özet Kartlar
     summaryContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 16 },

@@ -1,9 +1,12 @@
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
-import { initializeApp } from "firebase/app";
+import { FirebaseApp, initializeApp } from "firebase/app";
+// @ts-ignore
+import * as FirebaseAuth from "firebase/auth";
 import {
+  Auth,
   browserSessionPersistence,
+  User as FirebaseUser,
   getAuth,
-  getReactNativePersistence,
   initializeAuth,
   onAuthStateChanged,
   setPersistence,
@@ -14,12 +17,16 @@ import {
   addDoc,
   collection,
   doc,
+  enableIndexedDbPersistence,
+  Firestore,
   getDoc,
   getDocs,
   getFirestore,
+  limit,
   orderBy,
   query,
   setDoc,
+  startAfter,
   updateDoc,
   where
 } from "firebase/firestore";
@@ -39,27 +46,38 @@ if (!firebaseConfig.apiKey) {
   console.error("Firebase API Key is missing! Check .env file.");
 }
 
-const app = initializeApp(firebaseConfig);
+const app: FirebaseApp = initializeApp(firebaseConfig);
 
-let auth;
+let auth: Auth;
 if (Platform.OS === 'web') {
   auth = getAuth(app);
   setPersistence(auth, browserSessionPersistence);
 } else {
   auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(ReactNativeAsyncStorage)
+    persistence: (FirebaseAuth as any).getReactNativePersistence(ReactNativeAsyncStorage)
   });
 }
 
 /** @type {import("firebase/firestore").Firestore} */
-const db = getFirestore(app);
+const db: Firestore = getFirestore(app);
+
+if (Platform.OS === 'web') {
+  enableIndexedDbPersistence(db).catch((err: any) => {
+    if (err.code == 'failed-precondition') {
+      console.warn("Persistence failed: Multiple tabs open.");
+    } else if (err.code == 'unimplemented') {
+      console.warn("Persistence failed: Browser not supported.");
+    }
+  });
+}
+
 
 const storage = getStorage(app);
 
 // --- Helper Functions ---
 
 // 1. createTalep
-export const createTalep = async (talepData) => {
+export const createTalep = async (talepData: any) => {
   try {
     const docRef = await addDoc(collection(db, "talepler"), {
       ...talepData,
@@ -68,25 +86,33 @@ export const createTalep = async (talepData) => {
       oncelik: talepData.oncelik || 'normal'
     });
     return { success: true, id: docRef.id };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Talep oluşturma hatası:", error);
     return { success: false, message: error.message };
   }
 };
 
 // 2. getTalepler
-export const getTalepler = async (userId, rol, filters = {}) => {
+export const getTalepler = async (userId: string, rol: string, filters: any = {}, lastDoc: any = null, pageSize: number = 20) => {
   try {
-    let talepler = [];
+    let talepler: any[] = [];
+    let lastVisible: any = null;
     const talesRef = collection(db, "talepler");
 
     if (rol === 'musteri') {
-      const q = query(talesRef, where('olusturanId', '==', userId), orderBy('olusturmaTarihi', 'desc'));
+      const constraints: any[] = [where('olusturanId', '==', userId), orderBy('olusturmaTarihi', 'desc')];
+
+      if (lastDoc) constraints.push(startAfter(lastDoc));
+      constraints.push(limit(pageSize));
+
+      const q = query(talesRef, ...constraints);
       const snapshot = await getDocs(q);
       talepler = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      lastVisible = snapshot.docs[snapshot.docs.length - 1];
 
     } else if (rol === 'teknisyen') {
       // Teknisyen: Atananlar VEYA Yeni (Boşta) olanlar
+      // NOT: Merge işlemi nedeniyle şimdilik burada sayfalama devre dışı
       const qAssigned = query(talesRef, where('atananTeknisyenId', '==', userId), orderBy('olusturmaTarihi', 'desc'));
       const qNew = query(talesRef, where('durum', '==', 'yeni'), orderBy('olusturmaTarihi', 'desc'));
 
@@ -97,50 +123,54 @@ export const getTalepler = async (userId, rol, filters = {}) => {
         mergedMap.set(d.id, { id: d.id, ...d.data() });
       });
 
-      talepler = Array.from(mergedMap.values()).sort((a, b) => {
-        // Timestamp kontrolü ve sıralama
+      talepler = Array.from(mergedMap.values()).sort((a: any, b: any) => {
         const dateA = a.olusturmaTarihi?.seconds || 0;
         const dateB = b.olusturmaTarihi?.seconds || 0;
         return dateB - dateA;
       });
+      // Teknisyen için hepsi dönüyor
 
     } else {
       // Yönetim: Filtrelere göre sorgu
-      let q = query(talesRef, orderBy("olusturmaTarihi", "desc"));
+      const constraints: any[] = [orderBy("olusturmaTarihi", "desc")];
 
       if (filters.durum) {
-        q = query(talesRef, where('durum', '==', filters.durum), orderBy("olusturmaTarihi", "desc"));
+        constraints.push(where('durum', '==', filters.durum));
       } else if (filters.oncelik) {
-        q = query(talesRef, where('oncelik', '==', filters.oncelik), orderBy("olusturmaTarihi", "desc"));
+        constraints.push(where('oncelik', '==', filters.oncelik));
       } else if (filters.atanmamis) {
-        // Atanmamış talepler genellikle 'yeni' durumundadır.
-        q = query(talesRef, where('durum', '==', 'yeni'), orderBy("olusturmaTarihi", "desc"));
+        constraints.push(where('durum', '==', 'yeni'));
       }
 
+      if (lastDoc) constraints.push(startAfter(lastDoc));
+      constraints.push(limit(pageSize));
+
+      const q = query(talesRef, ...constraints);
       const snapshot = await getDocs(q);
       talepler = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      lastVisible = snapshot.docs[snapshot.docs.length - 1];
     }
 
-    return { success: true, talepler };
-  } catch (error) {
+    return { success: true, talepler, lastVisible };
+  } catch (error: any) {
     console.error("Talepleri getirme hatası:", error);
     return { success: false, message: error.message };
   }
 };
 
 // 3. updateTalepDurum
-export const updateTalepDurum = async (talepId, yeniDurum) => {
+export const updateTalepDurum = async (talepId: string, yeniDurum: string) => {
   try {
     const talepRef = doc(db, "talepler", talepId);
     await updateDoc(talepRef, { durum: yeniDurum });
     return { success: true };
-  } catch (error) {
+  } catch (error: any) {
     return { success: false, message: error.message };
   }
 };
 
 // 4. puanlaTalep
-export const puanlaTalep = async (talepId, puan, yorum) => {
+export const puanlaTalep = async (talepId: string, puan: number, yorum: string) => {
   try {
     const talepRef = doc(db, "talepler", talepId);
     await updateDoc(talepRef, {
@@ -149,13 +179,13 @@ export const puanlaTalep = async (talepId, puan, yorum) => {
       degerlendirmeTarihi: new Date()
     });
     return { success: true };
-  } catch (error) {
+  } catch (error: any) {
     return { success: false, message: error.message };
   }
 };
 
 // 5. uploadImage
-export const uploadImage = async (uri, path) => {
+export const uploadImage = async (uri: string, path: string) => {
   try {
     const response = await fetch(uri);
     const blob = await response.blob();
@@ -163,7 +193,7 @@ export const uploadImage = async (uri, path) => {
     await uploadBytes(storageRef, blob);
     const downloadURL = await getDownloadURL(storageRef);
     return { success: true, downloadURL };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Upload error:", error);
     return { success: false, message: error.message };
   }
@@ -175,7 +205,7 @@ export const getProjeler = async () => {
     const snap = await getDocs(collection(db, "projeler"));
     const projeler = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     return { success: true, projeler };
-  } catch (e) {
+  } catch (e: any) {
     return { success: false, message: e.message };
   }
 };
@@ -186,14 +216,14 @@ export const getAllEkipler = async () => {
     const snap = await getDocs(collection(db, "ekipler"));
     const ekipler = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     return { success: true, ekipler };
-  } catch (e) {
+  } catch (e: any) {
     return { success: false, message: e.message };
   }
 };
 export const getActiveEkipler = getAllEkipler;
 
 // 9. assignTalepToEkip
-export const assignTalepToEkip = async (talepId, ekipId, ekipAdi) => {
+export const assignTalepToEkip = async (talepId: string, ekipId: string, ekipAdi: string) => {
   try {
     const talepRef = doc(db, "talepler", talepId);
     await updateDoc(talepRef, {
@@ -203,7 +233,7 @@ export const assignTalepToEkip = async (talepId, ekipId, ekipAdi) => {
       atamaTarihi: new Date()
     });
     return { success: true };
-  } catch (e) {
+  } catch (e: any) {
     return { success: false, message: e.message };
   }
 };
@@ -222,14 +252,14 @@ export const getAllUsers = async () => {
       };
     });
     return { success: true, users };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Kullanıcıları getirme hatası:", error);
     return { success: false, message: error.message };
   }
 };
 
 // 11. saveEkip
-export const saveEkip = async (ekipData) => {
+export const saveEkip = async (ekipData: any) => {
   try {
     if (ekipData.id) {
       await updateDoc(doc(db, "ekipler", ekipData.id), ekipData);
@@ -237,14 +267,14 @@ export const saveEkip = async (ekipData) => {
       await addDoc(collection(db, "ekipler"), ekipData);
     }
     return { success: true };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Ekip kaydetme hatası:", error);
     return { success: false, message: error.message };
   }
 };
 
 // 11b. createEkip
-export const createEkip = async (ekipData) => {
+export const createEkip = async (ekipData: any) => {
   try {
     const docRef = await addDoc(collection(db, "ekipler"), {
       ...ekipData,
@@ -253,58 +283,58 @@ export const createEkip = async (ekipData) => {
       olusturmaTarihi: new Date()
     });
     return { success: true, id: docRef.id };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Ekip oluşturma hatası:", error);
     return { success: false, message: error.message };
   }
 };
 
 // 11c. updateEkip
-export const updateEkip = async (ekipId, data) => {
+export const updateEkip = async (ekipId: string, data: any) => {
   try {
     await updateDoc(doc(db, "ekipler", ekipId), data);
     return { success: true };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Ekip güncelleme hatası:", error);
     return { success: false, message: error.message };
   }
 };
 
 // 11d. deleteEkip
-export const deleteEkip = async (ekipId) => {
+export const deleteEkip = async (ekipId: string) => {
   try {
     const { deleteDoc } = require("firebase/firestore");
     await deleteDoc(doc(db, "ekipler", ekipId));
     return { success: true };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Ekip silme hatası:", error);
     return { success: false, message: error.message };
   }
 };
 
 // 11e. addUserToEkip
-export const addUserToEkip = async (ekipId, userId) => {
+export const addUserToEkip = async (ekipId: string, userId: string) => {
   try {
     const { arrayUnion } = require("firebase/firestore");
     await updateDoc(doc(db, "ekipler", ekipId), {
       uyeler: arrayUnion(userId)
     });
     return { success: true };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Kullanıcı ekleme hatası:", error);
     return { success: false, message: error.message };
   }
 };
 
 // 11f. removeUserFromEkip
-export const removeUserFromEkip = async (ekipId, userId) => {
+export const removeUserFromEkip = async (ekipId: string, userId: string) => {
   try {
     const { arrayRemove } = require("firebase/firestore");
     await updateDoc(doc(db, "ekipler", ekipId), {
       uyeler: arrayRemove(userId)
     });
     return { success: true };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Kullanıcı çıkarma hatası:", error);
     return { success: false, message: error.message };
   }
@@ -326,14 +356,14 @@ export const createDefaultEkipler = async () => {
       });
     }
     return { success: true };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Varsayılan ekipler oluşturma hatası:", error);
     return { success: false, message: error.message };
   }
 };
 
 // 12. createUser (Corrected)
-export const createUser = async (userData, creatorEmail, adminAuthPassword) => {
+export const createUser = async (userData: any, creatorEmail?: string, adminAuthPassword?: string) => {
   try {
     // Requires firebase/app imports for secondary app instance
     const { initializeApp: initApp } = require("firebase/app");
@@ -363,19 +393,19 @@ export const createUser = async (userData, creatorEmail, adminAuthPassword) => {
     // await deleteApp(secondaryApp); // Can be problematic on web, safe to leave for GC
 
     return { success: true };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Kullanıcı oluşturma hatası:", error);
     return { success: false, message: error.message };
   }
 };
 
 // 13. updateUser
-export const updateUser = async (userId, data) => {
+export const updateUser = async (userId: string, data: any) => {
   try {
     const userRef = doc(db, "users", userId);
     await updateDoc(userRef, data);
     return { success: true };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Kullanıcı güncelleme hatası:", error);
     return { success: false, message: error.message };
   }
@@ -383,7 +413,7 @@ export const updateUser = async (userId, data) => {
 
 // --- Auth Helpers ---
 
-export const loginUser = async (email, password) => {
+export const loginUser = async (email: string, password: string) => {
   try {
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
@@ -397,7 +427,7 @@ export const loginUser = async (email, password) => {
     } else {
       return { success: false, message: "Kullanıcı bilgileri bulunamadı." };
     }
-  } catch (error) {
+  } catch (error: any) {
     return { success: false, message: error.message };
   }
 };
@@ -406,7 +436,7 @@ export const logoutUser = async () => {
   try {
     await signOut(auth);
     return { success: true };
-  } catch (error) {
+  } catch (error: any) {
     return { success: false, message: error.message };
   }
 };
@@ -424,7 +454,7 @@ export const getCurrentUser = async () => {
   return null;
 };
 
-const normalizeRole = (role) => {
+const normalizeRole = (role: string) => {
   if (!role) return 'musteri';
   const r = role.toLowerCase().trim();
   if (r === 'yonetici' || r === 'admin' || r === 'yonetim' || r === 'manager') return 'yonetim';
@@ -434,18 +464,20 @@ const normalizeRole = (role) => {
 
 const ADMIN_EMAILS = ['admin@dnadestek.com', 'eren.gulmez@dnadestek.com'];
 
-export const onAuthChange = (callback) => {
-  return onAuthStateChanged(auth, async (user) => {
+export const onAuthChange = (callback: (user: any) => void) => {
+  return onAuthStateChanged(auth, async (user: FirebaseUser | null) => {
     if (user) {
+      if (!user.email) return; // Should not happen usually
+
       try {
         console.log(`Auth check for: ${user.email} (${user.uid})`);
         const userDoc = await getDoc(doc(db, "users", user.uid));
 
-        let userData = { uid: user.uid, email: user.email, rol: 'musteri' };
+        let userData: any = { uid: user.uid, email: user.email, rol: 'musteri' };
 
         if (userDoc.exists()) {
           const data = userDoc.data();
-          console.log("Firestore User Data:", JSON.stringify(data)); // DEBUG LOG
+          // console.log("Firestore User Data:", JSON.stringify(data));
 
           const rawRole = data.rol || data.role;
           const effectiveRole = normalizeRole(rawRole);
