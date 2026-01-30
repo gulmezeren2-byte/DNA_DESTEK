@@ -17,6 +17,7 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import CustomHeader from '../../components/CustomHeader';
 import { ListSkeleton } from '../../components/Skeleton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -372,36 +373,26 @@ export default function TeknisyenScreen() {
         <View style={[styles.container, { backgroundColor: colors.background }]}>
             <StatusBar barStyle="light-content" />
 
-            {/* Header */}
-            <View style={[styles.header, { backgroundColor: colors.headerBg }]}>
-                <View style={styles.headerTop}>
-                    <View>
-                        <Text style={styles.headerTitle}>Teknisyen Paneli</Text>
-                        <Text style={styles.headerSubtitle}>{user?.ad} {user?.soyad}</Text>
-                    </View>
-                    <TouchableOpacity style={styles.settingsButton} onPress={() => router.push('/ayarlar')}>
-                        <Ionicons name="settings-outline" size={24} color="#fff" />
-                    </TouchableOpacity>
-                </View>
+            {/* Premium Custom Header */}
+            <CustomHeader />
 
-                {/* İstatistikler */}
-                <View style={styles.statsContainer}>
-                    <View style={styles.statItem}>
-                        <Text style={styles.statNumber}>{aktifTalepler.length}</Text>
-                        <Text style={styles.statLabel}>Aktif</Text>
-                    </View>
-                    <View style={[styles.statDivider, { backgroundColor: 'rgba(255,255,255,0.3)' }]} />
-                    <View style={styles.statItem}>
-                        <Text style={styles.statNumber}>{tamamlananTalepler.length}</Text>
-                        <Text style={styles.statLabel}>Tamamlanan</Text>
-                    </View>
-                    <View style={[styles.statDivider, { backgroundColor: 'rgba(255,255,255,0.3)' }]} />
-                    <View style={styles.statItem}>
-                        <Text style={[styles.statNumber, { color: '#ffcdd2' }]}>
-                            {talepler.filter(t => t.oncelik === 'acil').length}
-                        </Text>
-                        <Text style={styles.statLabel}>Acil</Text>
-                    </View>
+            {/* İstatistikler - Floating Card Style */}
+            <View style={styles.statsContainer}>
+                <View style={styles.statItem}>
+                    <Text style={styles.statNumber}>{aktifTalepler.length}</Text>
+                    <Text style={styles.statLabel}>Aktif</Text>
+                </View>
+                <View style={[styles.statDivider, { backgroundColor: 'rgba(255,255,255,0.2)' }]} />
+                <View style={styles.statItem}>
+                    <Text style={styles.statNumber}>{tamamlananTalepler.length}</Text>
+                    <Text style={styles.statLabel}>Biten</Text>
+                </View>
+                <View style={[styles.statDivider, { backgroundColor: 'rgba(255,255,255,0.2)' }]} />
+                <View style={styles.statItem}>
+                    <Text style={[styles.statNumber, { color: '#ffcdd2' }]}>
+                        {talepler.filter(t => t.oncelik === 'acil').length}
+                    </Text>
+                    <Text style={styles.statLabel}>Acil</Text>
                 </View>
             </View>
 
@@ -769,35 +760,65 @@ const styles = StyleSheet.create({
     container: { flex: 1 },
     loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     loadingText: { marginTop: 12, fontSize: 14 },
-    header: { paddingTop: 50, paddingBottom: 20, paddingHorizontal: 20 },
-    headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    headerTitle: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
-    headerSubtitle: { fontSize: 13, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
-    settingsButton: { padding: 8 },
-    statsContainer: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 20, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 12, padding: 16 },
-    statItem: { alignItems: 'center' },
-    statNumber: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
-    statLabel: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 4 },
-    statDivider: { width: 1, height: '100%' },
-    content: { flex: 1, padding: 16 },
+    // Eski header stilleri kaldırıldı, CustomHeader kullanılıyor
+    header: { display: 'none' },
+
+    // Stats Container Refined (Overlay effect)
+    statsContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        alignItems: 'center',
+        marginHorizontal: 20,
+        marginTop: -30, // Pull up to overlap with header slightly
+        marginBottom: 10,
+        backgroundColor: '#37474f', // Dark grey specialized for stats
+        borderRadius: 20,
+        padding: 20,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.2,
+        shadowRadius: 12,
+        elevation: 8,
+        zIndex: 20
+    },
+    statItem: { alignItems: 'center', minWidth: 60 },
+    statNumber: { fontSize: 26, fontWeight: '800', color: '#fff' },
+    statLabel: { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 4, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+    statDivider: { width: 1, height: 40 },
+
+    content: { flex: 1, padding: 20, paddingTop: 10 },
     emptyContainer: { alignItems: 'center', paddingVertical: 60 },
     emptyIcon: { width: 100, height: 100, borderRadius: 50, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
     emptyText: { fontSize: 18, fontWeight: '600' },
     emptySubtext: { fontSize: 14, marginTop: 8, textAlign: 'center' },
-    section: { marginBottom: 24 },
-    sectionTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12 },
-    talepCard: { borderRadius: 14, marginBottom: 12, overflow: 'hidden', flexDirection: 'row' },
-    statusBar: { width: 4 },
-    talepContent: { flex: 1, padding: 14 },
-    talepHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-    kategoriBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
-    kategoriText: { fontSize: 11, fontWeight: '600' },
-    durumBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, gap: 4 },
-    durumText: { fontSize: 11, fontWeight: '600' },
-    talepBaslik: { fontSize: 16, fontWeight: '600', marginBottom: 8 },
-    infoRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
-    infoText: { fontSize: 12 },
-    talepFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, marginTop: 8, borderTopWidth: 1 },
+    section: { marginBottom: 30 },
+    sectionTitle: { fontSize: 18, fontWeight: '800', marginBottom: 16, marginLeft: 8 },
+
+    // Card Styling - Premium Look
+    talepCard: {
+        borderRadius: 16,
+        marginBottom: 16,
+        overflow: 'hidden',
+        flexDirection: 'row',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+        elevation: 3,
+        borderWidth: 1,
+        borderColor: 'rgba(0,0,0,0.02)'
+    },
+    statusBar: { width: 6 },
+    talepContent: { flex: 1, padding: 16 },
+    talepHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+    kategoriBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
+    kategoriText: { fontSize: 11, fontWeight: '700' },
+    durumBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, gap: 5 },
+    durumText: { fontSize: 11, fontWeight: '700' },
+    talepBaslik: { fontSize: 17, fontWeight: '700', marginBottom: 10, lineHeight: 22 },
+    infoRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+    infoText: { fontSize: 13, fontWeight: '500' },
+    talepFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, marginTop: 4, borderTopWidth: 1 },
     footerLeft: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     tarihText: { fontSize: 11 },
     yorumIndicator: { flexDirection: 'row', alignItems: 'center', gap: 4 },

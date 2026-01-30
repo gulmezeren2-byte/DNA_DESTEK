@@ -16,6 +16,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import CustomHeader from '../../components/CustomHeader';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { auth, db, logoutUser } from '../../firebaseConfig';
@@ -143,16 +144,13 @@ export default function AyarlarScreen() {
         <View style={[styles.container, { backgroundColor: colors.background }]}>
             <StatusBar barStyle="light-content" />
 
-            {/* Header */}
-            <View style={[styles.header, { backgroundColor: colors.headerBg }]}>
-                <View style={styles.headerTop}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                        <Ionicons name="arrow-back" size={24} color="#fff" />
-                    </TouchableOpacity>
-                    <Text style={styles.headerTitle}>Profil ve Ayarlar</Text>
-                    <View style={{ width: 24 }} />
-                </View>
-            </View>
+            {/* Premium Header */}
+            <CustomHeader
+                title="Profil ve Ayarlar"
+                subtitle="Hesabınızı yönetin"
+                showSettings={false}
+                showBackButton={true}
+            />
 
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
                 <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -352,10 +350,8 @@ export default function AyarlarScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    header: { paddingTop: 50, paddingBottom: 20, paddingHorizontal: 20 },
-    headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    backButton: {},
-    headerTitle: { fontSize: 20, fontWeight: '700', color: '#fff' },
+    container: { flex: 1 },
+    // header: ... (removed as it is in CustomHeader)
     content: { flex: 1, padding: 20 },
 
     // Profil Kartı
