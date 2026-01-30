@@ -350,22 +350,33 @@ export default function HomeScreen() {
       <View style={[styles.header, { backgroundColor: colors.headerBg }]}>
         <View style={styles.headerTop}>
           <View>
-            <Text style={[styles.headerTitle, { color: colors.headerText }]}>DNA DESTEK</Text>
+            {/* Logo and Branding */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              {/* Fallback text if logo fails, but we use Image here */}
+              {/* Note: Ensure logo.png is in assets folder */}
+              <Image
+                source={require('../../assets/logo.png')}
+                style={{ width: 140, height: 40 }}
+                resizeMode="contain"
+              />
+            </View>
             <Text style={styles.headerSubtitle}>Yapı & Teknik Çözüm Merkezi</Text>
           </View>
           <TouchableOpacity style={styles.settingsButton} onPress={() => router.push('/ayarlar')}>
             <Ionicons name="settings-outline" size={24} color={colors.headerText} />
           </TouchableOpacity>
         </View>
-        <View style={[styles.userInfo, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
-          <View style={styles.userAvatar}>
+
+        {/* User Card */}
+        <View style={[styles.userInfo, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.95)' }]}>
+          <View style={[styles.userAvatar, { backgroundColor: colors.primary }]}>
             <Text style={styles.userAvatarText}>
-              {user?.ad?.charAt(0)}{user?.soyad?.charAt(0)}
+              {user?.ad ? user.ad.charAt(0).toUpperCase() : ''}{user?.soyad ? user.soyad.charAt(0).toUpperCase() : ''}
             </Text>
           </View>
           <View style={styles.userTextContainer}>
-            <Text style={styles.userName}>{user?.ad} {user?.soyad}</Text>
-            <Text style={styles.userEmail}>{user?.email}</Text>
+            <Text style={[styles.userName, { color: isDark ? '#fff' : '#000' }]}>{user?.ad} {user?.soyad}</Text>
+            <Text style={[styles.userEmail, { color: isDark ? 'rgba(255,255,255,0.6)' : '#666' }]}>{user?.email}</Text>
           </View>
         </View>
       </View>
@@ -522,50 +533,50 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingTop: 50, paddingBottom: 20, paddingHorizontal: 20 },
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  headerTitle: { fontSize: 22, fontWeight: 'bold' },
-  headerSubtitle: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
-  settingsButton: { padding: 8 },
-  userInfo: { flexDirection: 'row', alignItems: 'center', marginTop: 15, padding: 12, borderRadius: 12 },
-  userAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.3)', justifyContent: 'center', alignItems: 'center' },
-  userAvatarText: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
-  userTextContainer: { marginLeft: 12 },
-  userName: { fontSize: 15, fontWeight: '600', color: '#fff' },
-  userEmail: { fontSize: 12, color: 'rgba(255,255,255,0.7)' },
-  content: { flex: 1, padding: 16 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  sectionHeaderText: { fontSize: 20, fontWeight: 'bold', marginLeft: 8 },
-  card: { borderRadius: 16, padding: 18, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
-  cardTitle: { fontSize: 15, fontWeight: '600', marginBottom: 14 },
-  label: { fontSize: 13, fontWeight: '600', marginBottom: 6 },
-  input: { borderWidth: 1, borderRadius: 10, padding: 14, fontSize: 15, marginBottom: 12 },
-  textArea: { height: 90, textAlignVertical: 'top' },
-  dropdownContainer: { marginBottom: 12 },
-  dropdown: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderRadius: 10, padding: 14 },
+  header: { paddingTop: 60, paddingBottom: 25, paddingHorizontal: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 15 },
+  headerTitle: { fontSize: 24, fontWeight: 'bold' },
+  headerSubtitle: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 4, marginLeft: 4 },
+  settingsButton: { padding: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 12 },
+  userInfo: { flexDirection: 'row', alignItems: 'center', marginTop: 5, padding: 16, borderRadius: 20, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
+  userAvatar: { width: 54, height: 54, borderRadius: 27, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff' },
+  userAvatarText: { fontSize: 20, fontWeight: 'bold', color: '#fff' },
+  userTextContainer: { marginLeft: 16 },
+  userName: { fontSize: 18, fontWeight: 'bold' },
+  userEmail: { fontSize: 13 },
+  content: { flex: 1, padding: 20 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, marginTop: 10 },
+  sectionHeaderText: { fontSize: 22, fontWeight: '800', marginLeft: 10 },
+  card: { borderRadius: 20, padding: 20, marginBottom: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 3, borderWidth: 1, borderColor: 'rgba(0,0,0,0.02)' },
+  cardTitle: { fontSize: 16, fontWeight: '700', marginBottom: 16, opacity: 0.9 },
+  label: { fontSize: 14, fontWeight: '600', marginBottom: 8, marginLeft: 4 },
+  input: { borderWidth: 1, borderRadius: 14, padding: 16, fontSize: 16, marginBottom: 16 },
+  textArea: { height: 120, textAlignVertical: 'top' },
+  dropdownContainer: { marginBottom: 16 },
+  dropdown: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderRadius: 14, padding: 16 },
   dropdownDisabled: { opacity: 0.5 },
-  dropdownText: { fontSize: 15 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '60%' },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 18, borderBottomWidth: 1 },
-  modalTitle: { fontSize: 17, fontWeight: 'bold' },
-  modalItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1 },
-  modalItemText: { fontSize: 15 },
-  categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  catChip: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 20, borderWidth: 1 },
-  catChipText: { fontSize: 13, fontWeight: '500' },
-  emptyProje: { alignItems: 'center', padding: 20 },
-  emptyProjeText: { fontSize: 14, marginTop: 10 },
-  submitButton: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 16, borderRadius: 12, gap: 8, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
+  dropdownText: { fontSize: 16 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  modalContent: { borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: '70%', paddingBottom: 30 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1 },
+  modalTitle: { fontSize: 20, fontWeight: 'bold' },
+  modalItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1 },
+  modalItemText: { fontSize: 16 },
+  categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  catChip: { paddingVertical: 12, paddingHorizontal: 18, borderRadius: 24, borderWidth: 1.5 },
+  catChipText: { fontSize: 14, fontWeight: '600' },
+  emptyProje: { alignItems: 'center', padding: 30 },
+  emptyProjeText: { fontSize: 15, marginTop: 12 },
+  submitButton: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 18, borderRadius: 16, gap: 10, shadowColor: '#c62828', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 8, marginBottom: 40 },
   submitButtonDisabled: { opacity: 0.7 },
   submitLoading: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  submitButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  submitButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
   fotoContainer: { marginBottom: 16 },
-  fotoList: { gap: 12, alignItems: 'center' },
-  fotoWrapper: { position: 'relative' },
-  fotoPreview: { width: 80, height: 80, borderRadius: 8 },
-  fotoSilBtn: { position: 'absolute', top: -8, right: -8, backgroundColor: '#fff', borderRadius: 12 },
-  fotoEkleBtn: { width: 80, height: 80, borderRadius: 8, borderWidth: 1, borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', gap: 4 },
-  fotoEkleText: { fontSize: 12, fontWeight: '500' },
-  fotoHint: { fontSize: 11, marginTop: 6, fontStyle: 'italic' },
+  fotoList: { gap: 16, alignItems: 'center' },
+  fotoWrapper: { position: 'relative', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
+  fotoPreview: { width: 90, height: 90, borderRadius: 12 },
+  fotoSilBtn: { position: 'absolute', top: -10, right: -10, backgroundColor: '#fff', borderRadius: 15, elevation: 2 },
+  fotoEkleBtn: { width: 90, height: 90, borderRadius: 12, borderWidth: 2, borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', gap: 6 },
+  fotoEkleText: { fontSize: 13, fontWeight: '600' },
+  fotoHint: { fontSize: 12, marginTop: 10, fontStyle: 'italic', textAlign: 'center' },
 });

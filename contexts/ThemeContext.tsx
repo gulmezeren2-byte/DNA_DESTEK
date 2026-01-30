@@ -14,34 +14,34 @@ interface ThemeContextType {
 }
 
 const lightColors = {
-    primary: '#1a73e8',
-    background: '#f8f9fa',
+    primary: '#C62828', // DNA Red
+    background: '#f5f5f5',
     card: '#ffffff',
-    text: '#222222',
-    textSecondary: '#666666',
-    textMuted: '#999999',
-    border: '#e8e8e8',
-    inputBg: '#f8f9fa',
+    text: '#212121',
+    textSecondary: '#616161',
+    textMuted: '#9e9e9e',
+    border: '#e0e0e0',
+    inputBg: '#ffffff',
     success: '#2e7d32',
-    warning: '#f57c00',
-    error: '#c62828',
-    headerBg: '#1a73e8',
+    warning: '#ed6c02',
+    error: '#d32f2f',
+    headerBg: '#C62828',
     headerText: '#ffffff',
 };
 
 const darkColors = {
-    primary: '#4da3ff',
+    primary: '#ef5350', // Lighter red for dark mode
     background: '#121212',
     card: '#1e1e1e',
-    text: '#e8e8e8',
-    textSecondary: '#aaaaaa',
-    textMuted: '#777777',
+    text: '#e0e0e0',
+    textSecondary: '#b0b0b0',
+    textMuted: '#757575',
     border: '#333333',
-    inputBg: '#2a2a2a',
+    inputBg: '#2c2c2c',
     success: '#66bb6a',
     warning: '#ffa726',
-    error: '#ef5350',
-    headerBg: '#1e1e1e',
+    error: '#f44336',
+    headerBg: '#1e1e1e', // Dark header for dark mode
     headerText: '#ffffff',
 };
 
