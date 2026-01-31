@@ -16,16 +16,16 @@ import {
 import { ListSkeleton } from '../../components/Skeleton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
+import { getAllUsers } from '../../services/authService';
 import {
     addUserToEkip,
     createDefaultEkipler,
     createEkip,
     deleteEkip,
     getAllEkipler,
-    getAllUsers,
     removeUserFromEkip,
     updateEkip,
-} from '../../firebaseConfig';
+} from '../../services/ekipService';
 import toast from '../../services/toastService';
 
 interface Ekip {

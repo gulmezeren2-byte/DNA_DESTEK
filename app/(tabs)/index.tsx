@@ -22,7 +22,9 @@ import {
 import Logo from '../../components/Logo';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { createTalep, getProjeler, uploadImage } from '../../firebaseConfig';
+import { getProjeler } from '../../services/ekipService';
+import { uploadImage } from '../../services/storageService';
+import { createTalep } from '../../services/talepService';
 import toast from '../../services/toastService';
 
 // Dropdown bileşeni

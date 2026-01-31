@@ -19,7 +19,8 @@ import Logo from '../../components/Logo';
 import { ReportSkeleton } from '../../components/Skeleton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { db, getAllEkipler } from '../../firebaseConfig';
+import { db } from '../../firebaseConfig';
+import { getAllEkipler } from '../../services/ekipService';
 
 const screenWidth = Dimensions.get('window').width;
 

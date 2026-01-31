@@ -150,6 +150,7 @@ export const APP_CONFIG = {
     PHOTO_MAX_WIDTH: 800,
     PHOTO_QUALITY: 0.7,
     PHOTO_COMPRESS: 0.6,
+    ADMIN_EMAILS: ['admin@dnadestek.com', 'eren.gulmez@dnadestek.com'] as string[],
 } as const;
 
 // Firebase hata mesajları (Türkçe)

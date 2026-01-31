@@ -2,7 +2,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
-import { doc, getDocFromServer, setDoc } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
@@ -20,7 +20,8 @@ import {
 import CustomHeader from '../../components/CustomHeader';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { auth, db, logoutUser } from '../../firebaseConfig';
+import { auth, db } from '../../firebaseConfig';
+import { logoutUser } from '../../services/authService';
 import toast from '../../services/toastService';
 
 const rolEtiketleri: Record<string, { label: string; color: string; icon: string }> = {
@@ -67,27 +68,12 @@ export default function AyarlarScreen() {
             console.log('Profil güncelleme başladı:', user.uid);
             const userRef = doc(db, 'users', user.uid);
 
-            // ADIM 1: Bağlantı Kontrolü (Sunucudan zorla oku)
-            try {
-                // Cache'i atlayıp direkt sunucuya gitmeye çalış
-                await getDocFromServer(userRef);
-            } catch (readError: any) {
-                console.error('Sunucu bağlantı testi başarısız:', readError);
-                throw new Error(`Sunucuya erişilemiyor (Bağlantı hatası): ${readError.code}`);
-            }
-
-            // ADIM 2: Yazma İşlemi
-            const updatePromise = setDoc(userRef, {
+            // ADIM 2: Yazma İşlemi (Offline destekli)
+            await setDoc(userRef, {
                 ad: ad.trim(),
                 soyad: soyad.trim(),
                 telefon: telefon.trim(),
             }, { merge: true });
-
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Yazma işlemi zaman aşımına uğradı (15sn). Güvenlik duvarı veya ağ sorunu olabilir.')), 15000)
-            );
-
-            await Promise.race([updatePromise, timeoutPromise]);
 
             // Context'i güncelle - Güvenli güncelleme
             setUser({

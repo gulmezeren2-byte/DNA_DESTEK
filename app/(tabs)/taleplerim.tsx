@@ -1,10 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
+import { FlashList } from '@shopify/flash-list';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
-    FlatList,
     Image,
     Modal,
     Platform,
@@ -15,14 +15,14 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View
+    View,
 } from 'react-native';
 import AnimatedItem from '../../components/AnimatedList';
 import Logo from '../../components/Logo';
 import { ListSkeleton } from '../../components/Skeleton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { getTalepler, puanlaTalep, subscribeToTalepler, updateTalepDurum } from '../../firebaseConfig';
+import { getTalepler, puanlaTalep, subscribeToTalepler, updateTalepDurum } from '../../services/talepService';
 import toast from '../../services/toastService';
 
 interface Talep {
@@ -222,10 +222,10 @@ export default function TaleplerimScreen() {
         }
     }, [user]);
 
-    const onRefresh = useCallback(() => {
+    const onRefresh = () => {
         setRefreshing(true);
         talepleriYukle(true);
-    }, []);
+    };
 
     const formatTarih = (timestamp: { seconds: number }) => {
         if (!timestamp?.seconds) return '-';
@@ -367,25 +367,17 @@ export default function TaleplerimScreen() {
                 </View>
             </LinearGradient>
 
-            <FlatList
-                style={styles.content}
+            <FlashList
+                contentContainerStyle={styles.content}
                 data={talepler}
+                // @ts-ignore
+                estimatedItemSize={200}
                 keyExtractor={(item) => item.id}
                 refreshControl={
                     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
                 }
                 onEndReached={dahaFazlaYukle}
                 onEndReachedThreshold={0.5}
-                // Performance Optimizations
-                initialNumToRender={10}
-                windowSize={5}
-                maxToRenderPerBatch={5}
-                removeClippedSubviews={true}
-                // Performance Optimizations
-                initialNumToRender={10}
-                windowSize={5}
-                maxToRenderPerBatch={5}
-                removeClippedSubviews={true}
                 ListFooterComponent={
                     loadingMore ?
                         <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 20 }} /> :
@@ -402,7 +394,8 @@ export default function TaleplerimScreen() {
                         </Text>
                     </View>
                 }
-                renderItem={({ item: talep, index }) => {
+                renderItem={({ item, index }: { item: Talep; index: number }) => {
+                    const talep = item;
                     const durum = durumConfig[talep.durum] || durumConfig.yeni;
                     const hasFoto = talep.fotograflar && talep.fotograflar.length > 0;
 

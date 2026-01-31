@@ -4,8 +4,11 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     FlatList,
+    KeyboardAvoidingView,
     Modal,
+    Platform,
     RefreshControl,
+    ScrollView,
     StatusBar,
     StyleSheet,
     Switch,
@@ -18,7 +21,7 @@ import { AnimatedItem } from '../../components/AnimatedList';
 import { ListSkeleton } from '../../components/Skeleton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { createUser, getAllUsers, updateUser } from '../../firebaseConfig';
+import { createUser, getAllUsers, updateUser } from '../../services/authService';
 import toast from '../../services/toastService';
 import { validateUserForm } from '../../utils/validation';
 
@@ -306,7 +309,10 @@ export default function KullanicilarScreen() {
 
             {/* Yeni Kullanıcı Modal */}
             <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={() => setModalVisible(false)}>
-                <View style={styles.modalOverlay}>
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                    style={styles.modalOverlay}
+                >
                     <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
                         <View style={styles.modalHeader}>
                             <Text style={[styles.modalTitle, { color: colors.text }]}>Yeni Kullanıcı</Text>
@@ -315,7 +321,7 @@ export default function KullanicilarScreen() {
                             </TouchableOpacity>
                         </View>
 
-                        <View style={styles.modalBody}>
+                        <ScrollView style={{ maxHeight: 500 }} contentContainerStyle={styles.modalBody}>
                             <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>E-posta *</Text>
                             <TextInput
                                 style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
@@ -425,7 +431,7 @@ export default function KullanicilarScreen() {
                                     </View>
                                 </>
                             )}
-                        </View>
+                        </ScrollView>
 
                         <TouchableOpacity
                             style={[styles.kaydetButon, kaydetmeYukleniyor && { opacity: 0.7 }]}
@@ -442,7 +448,7 @@ export default function KullanicilarScreen() {
                             )}
                         </TouchableOpacity>
                     </View>
-                </View>
+                </KeyboardAvoidingView>
             </Modal>
 
             {/* Admin Şifre Modalı */}

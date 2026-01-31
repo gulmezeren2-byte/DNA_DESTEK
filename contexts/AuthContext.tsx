@@ -1,6 +1,7 @@
 import { doc, updateDoc } from 'firebase/firestore';
 import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
-import { db, getCurrentUser, loginUser, logoutUser, onAuthChange } from '../firebaseConfig';
+import { db } from '../firebaseConfig';
+import { getCurrentUser, loginUser, logoutUser, onAuthChange } from '../services/authService';
 import { registerForPushNotificationsAsync } from '../services/notificationService';
 
 // Kullanıcı tipi

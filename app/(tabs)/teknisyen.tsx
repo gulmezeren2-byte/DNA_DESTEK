@@ -22,8 +22,10 @@ import Logo from '../../components/Logo';
 import { ListSkeleton } from '../../components/Skeleton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { db as dbAny, getAllEkipler, uploadImage } from '../../firebaseConfig';
+import { db as dbAny } from '../../firebaseConfig';
+import { getAllEkipler } from '../../services/ekipService';
 import { sendPushNotification } from '../../services/notificationService';
+import { uploadImage } from '../../services/storageService';
 import toast from '../../services/toastService';
 const db = dbAny as Firestore;
 
