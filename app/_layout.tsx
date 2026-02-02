@@ -1,9 +1,18 @@
 import { DarkTheme, DefaultTheme, ThemeProvider as NavigationThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter, useSegments } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, LogBox, StyleSheet, View } from 'react-native';
 import 'react-native-reanimated';
+
+// Prevent auto hide
+SplashScreen.preventAutoHideAsync().catch(() => { });
+
+LogBox.ignoreLogs([
+  'Animated: `useNativeDriver`',
+  'componentWillReceiveProps has been renamed',
+]);
 
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { ThemeProvider, useTheme } from '../contexts/ThemeContext';
@@ -18,6 +27,9 @@ function AuthNavigator() {
 
   useEffect(() => {
     if (loading) return;
+
+    // Hide splash screen once auth loading is done
+    SplashScreen.hideAsync().catch(() => { });
 
     const inAuthGroup = segments[0] === 'login';
     const inTabs = segments[0] === '(tabs)';

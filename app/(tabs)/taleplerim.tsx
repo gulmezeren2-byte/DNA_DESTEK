@@ -99,6 +99,7 @@ export default function TaleplerimScreen() {
     const { isDark, colors } = useTheme();
     const router = useRouter();
     const [talepler, setTalepler] = useState<Talep[]>([]);
+    const [activeTab, setActiveTab] = useState<'aktif' | 'gecmis'>('aktif');
     const [yukleniyor, setYukleniyor] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [seciliTalep, setSeciliTalep] = useState<Talep | null>(null);
@@ -214,6 +215,10 @@ export default function TaleplerimScreen() {
 
                 // Not: Snapshot her tetiklendiğinde yukleniyor false olur.
                 setYukleniyor(false);
+            } else {
+                console.error("Subscription error:", result.message);
+                setYukleniyor(false);
+                toast.error("Veri yüklenirken hata oluştu: " + result.message);
             }
         });
 
@@ -355,9 +360,14 @@ export default function TaleplerimScreen() {
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                         <Logo size="md" variant="glass" />
                         <View>
-                            <Text style={styles.headerTitle}>Taleplerim</Text>
+                            <Text style={styles.headerTitle}>
+                                {user?.rol === 'teknisyen' ? 'Görevlerim' : 'Taleplerim'}
+                            </Text>
                             <Text style={styles.headerSubtitle}>
-                                {talepler.length} talep • {talepler.filter(t => t.durum === 'islemde' || t.durum === 'atandi').length} aktif
+                                {user?.rol === 'teknisyen' ? 'Atanmış İşler' : 'Destek Geçmişi'}
+                            </Text>
+                            <Text style={[styles.headerSubtitle, { fontSize: 11, marginTop: 2, opacity: 0.8 }]}>
+                                {talepler.length} {user?.rol === 'teknisyen' ? 'görev' : 'talep'} • {talepler.filter(t => t.durum === 'islemde' || t.durum === 'atandi').length} aktif
                             </Text>
                         </View>
                     </View>
@@ -367,9 +377,27 @@ export default function TaleplerimScreen() {
                 </View>
             </LinearGradient>
 
+            <View style={styles.tabContainer}>
+                <TouchableOpacity
+                    style={[styles.tabButton, activeTab === 'aktif' && styles.activeTabButton, { borderBottomColor: activeTab === 'aktif' ? colors.primary : 'transparent' }]}
+                    onPress={() => setActiveTab('aktif')}
+                >
+                    <Text style={[styles.tabText, activeTab === 'aktif' && { color: colors.primary, fontWeight: 'bold' }, { color: colors.textSecondary }]}>Devam Edenler</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                    style={[styles.tabButton, activeTab === 'gecmis' && styles.activeTabButton, { borderBottomColor: activeTab === 'gecmis' ? colors.primary : 'transparent' }]}
+                    onPress={() => setActiveTab('gecmis')}
+                >
+                    <Text style={[styles.tabText, activeTab === 'gecmis' && { color: colors.primary, fontWeight: 'bold' }, { color: colors.textSecondary }]}>Tamamlananlar</Text>
+                </TouchableOpacity>
+            </View>
+
             <FlashList
                 contentContainerStyle={styles.content}
-                data={talepler}
+                data={talepler.filter(t => {
+                    if (activeTab === 'aktif') return ['yeni', 'atandi', 'islemde', 'beklemede'].includes(t.durum);
+                    return ['cozuldu', 'iptal', 'kapatildi'].includes(t.durum);
+                })}
                 // @ts-ignore
                 estimatedItemSize={200}
                 keyExtractor={(item) => item.id}
@@ -386,11 +414,20 @@ export default function TaleplerimScreen() {
                 ListEmptyComponent={
                     <View style={styles.emptyContainer}>
                         <View style={[styles.emptyIconContainer, { backgroundColor: isDark ? '#1a3a5c' : '#e3f2fd' }]}>
-                            <Ionicons name="document-text-outline" size={60} color={colors.primary} />
+                            <Ionicons
+                                name={user?.rol === 'teknisyen' ? "checkmark-done-circle-outline" : "document-text-outline"}
+                                size={60}
+                                color={colors.primary}
+                            />
                         </View>
-                        <Text style={[styles.emptyText, { color: colors.text }]}>Henüz talebiniz yok</Text>
+                        <Text style={[styles.emptyText, { color: colors.text }]}>
+                            {user?.rol === 'teknisyen' ? 'Atanmış Görev Yok' : 'Henüz talebiniz yok'}
+                        </Text>
                         <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
-                            Yeni bir destek talebi oluşturmak için{'\n'}"Yeni Talep" sekmesine gidin
+                            {user?.rol === 'teknisyen'
+                                ? 'Şu an üzerinize atanmış aktif bir görev bulunmamaktadır.\nEkip yöneticiniz görev atadığında burada görünecektir.'
+                                : 'Yeni bir destek talebi oluşturmak için\n"Yeni Talep" sekmesine gidin'
+                            }
                         </Text>
                     </View>
                 }
@@ -725,6 +762,24 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.3,
         shadowRadius: 10,
         elevation: 8,
+    },
+    tabContainer: {
+        flexDirection: 'row',
+        paddingHorizontal: 16,
+        paddingTop: 10,
+        backgroundColor: 'transparent',
+    },
+    tabButton: {
+        flex: 1,
+        paddingVertical: 12,
+        alignItems: 'center',
+        borderBottomWidth: 2,
+    },
+    activeTabButton: {
+    },
+    tabText: {
+        fontSize: 15,
+        fontWeight: '500',
     },
     headerTop: {
         flexDirection: 'row',

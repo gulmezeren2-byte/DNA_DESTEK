@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isAdmin() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.rol == 'yonetim';
+    }
+    function isTechnician() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.rol == 'teknisyen';
+    }
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if isSignedIn(); // Users can read profiles (needed for technician names)
+      allow create: if isAdmin(); // Only admins can create new users
+      allow update: if isAdmin() || isOwner(userId); // Admins or self can update
+      allow delete: if isAdmin(); // Only admins can delete
+    }
+
+    // Talepler Collection
+    match /talepler/{talepId} {
+      allow read: if isSignedIn() && (
+        isAdmin() || 
+        isTechnician() || 
+        resource.data.olusturanId == request.auth.uid
+      );
+      allow create: if isSignedIn(); // Anyone signed in can create a request
+      allow update: if isSignedIn() && (
+        isAdmin() || 
+        (isTechnician() && (resource.data.atananTeknisyenId == request.auth.uid || resource.data.durum == 'yeni')) ||
+        (resource.data.olusturanId == request.auth.uid && resource.data.durum == 'yeni') // Customers can only update if status is new
+      );
+    }
+  }
+}

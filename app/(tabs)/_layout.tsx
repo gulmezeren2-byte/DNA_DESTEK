@@ -1,146 +1,209 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
+import { DrawerContentComponentProps } from '@react-navigation/drawer';
+import { Drawer } from 'expo-router/drawer';
 import React from 'react';
+import { useWindowDimensions } from 'react-native';
+import CustomDrawerContent from '../../components/CustomDrawerContent';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 
-export default function TabLayout() {
+export default function Layout() {
   const { isYonetim, isTeknisyen, isMusteri } = useAuth();
   const { isDark, colors } = useTheme();
+  const dimensions = useWindowDimensions();
 
-  const tabBarStyle = {
-    paddingBottom: 5,
-    paddingTop: 5,
-    height: 60,
-    backgroundColor: isDark ? '#1e1e1e' : '#fff',
-    borderTopColor: isDark ? '#333' : '#e8e8e8',
-  };
+  // Responsive Drawer Logic
+  const isLargeScreen = dimensions.width >= 768;
 
   const screenOptions = {
-    tabBarActiveTintColor: colors.primary,
-    tabBarInactiveTintColor: isDark ? '#888' : '#999',
     headerShown: false,
-    tabBarStyle,
-    tabBarLabelStyle: { fontSize: 11, fontWeight: '600' as const },
+    drawerStyle: {
+      width: 280,
+      backgroundColor: 'transparent',
+      borderRightWidth: 0,
+    },
+    drawerType: isLargeScreen ? 'permanent' as const : 'front' as const,
+    drawerActiveBackgroundColor: 'rgba(255, 255, 255, 0.2)',
+    drawerActiveTintColor: '#fff',
+    drawerInactiveTintColor: 'rgba(255, 255, 255, 0.7)',
+    drawerLabelStyle: {
+      marginLeft: -10,
+      fontWeight: '600' as const,
+      fontSize: 15
+    },
+    drawerItemStyle: {
+      borderRadius: 12,
+      marginVertical: 4,
+      paddingHorizontal: 10
+    }
   };
+
+  const renderDrawerContent = (props: DrawerContentComponentProps) => <CustomDrawerContent {...props} />;
 
   // Teknisyen Layout
   if (isTeknisyen) {
     return (
-      <Tabs screenOptions={screenOptions} initialRouteName="teknisyen">
-        <Tabs.Screen
+      <Drawer
+        screenOptions={screenOptions}
+        drawerContent={renderDrawerContent}
+        initialRouteName="index"
+      >
+        <Drawer.Screen
+          name="index"
+          options={{
+            drawerLabel: 'Ana Sayfa',
+            title: 'Ana Sayfa',
+            drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="home-outline" size={22} color={color} />,
+          }}
+        />
+        <Drawer.Screen
           name="teknisyen"
           options={{
-            title: 'Talepler',
-            tabBarIcon: ({ color, size }) => <Ionicons name="construct-outline" size={size} color={color} />,
+            drawerLabel: 'Görev Paneli',
+            title: 'Görev Paneli',
+            drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="construct-outline" size={22} color={color} />,
           }}
         />
-        <Tabs.Screen
+        <Drawer.Screen
           name="taleplerim"
           options={{
-            title: 'Taleplerim',
-            tabBarIcon: ({ color, size }) => <Ionicons name="list-outline" size={size} color={color} />,
+            drawerLabel: 'Görevlerim',
+            title: 'Görevlerim',
+            drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="list-outline" size={22} color={color} />,
           }}
         />
-        <Tabs.Screen
+        <Drawer.Screen
           name="ayarlar"
           options={{
+            drawerLabel: 'Ayarlar',
             title: 'Ayarlar',
-            tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" size={size} color={color} />,
+            drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="settings-outline" size={22} color={color} />,
           }}
         />
+
         {/* Gizli Sayfalar */}
-        <Tabs.Screen name="index" options={{ href: null }} />
-        <Tabs.Screen name="explore" options={{ href: null }} />
-        <Tabs.Screen name="yonetim" options={{ href: null }} />
-        <Tabs.Screen name="ekipler" options={{ href: null }} />
-        <Tabs.Screen name="raporlar" options={{ href: null }} />
-        <Tabs.Screen name="kullanicilar" options={{ href: null }} />
-      </Tabs>
+        <Drawer.Screen name="yeni-talep" options={{ drawerItemStyle: { display: 'none' } }} />
+        <Drawer.Screen name="explore" options={{ drawerItemStyle: { display: 'none' } }} />
+        <Drawer.Screen name="yonetim" options={{ drawerItemStyle: { display: 'none' } }} />
+        <Drawer.Screen name="ekipler" options={{ drawerItemStyle: { display: 'none' } }} />
+        <Drawer.Screen name="raporlar" options={{ drawerItemStyle: { display: 'none' } }} />
+        <Drawer.Screen name="kullanicilar" options={{ drawerItemStyle: { display: 'none' } }} />
+      </Drawer>
     );
   }
 
   // Yönetici Layout
   if (isYonetim) {
     return (
-      <Tabs screenOptions={screenOptions}>
-        <Tabs.Screen
+      <Drawer
+        screenOptions={screenOptions}
+        drawerContent={renderDrawerContent}
+      >
+        <Drawer.Screen
+          name="index"
+          options={{
+            drawerLabel: 'Ana Sayfa',
+            title: 'Ana Sayfa',
+            drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="home-outline" size={22} color={color} />,
+          }}
+        />
+        <Drawer.Screen
           name="yonetim"
           options={{
+            drawerLabel: 'Yönetim Paneli',
             title: 'Yönetim',
-            tabBarIcon: ({ color, size }) => <Ionicons name="grid-outline" size={size} color={color} />,
+            drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="grid-outline" size={22} color={color} />,
           }}
         />
-        <Tabs.Screen
+        <Drawer.Screen
           name="ekipler"
           options={{
+            drawerLabel: 'Ekipler',
             title: 'Ekipler',
-            tabBarIcon: ({ color, size }) => <Ionicons name="people-circle-outline" size={size} color={color} />,
+            drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="people-circle-outline" size={22} color={color} />,
           }}
         />
-        <Tabs.Screen
+        <Drawer.Screen
           name="kullanicilar"
           options={{
+            drawerLabel: 'Kullanıcılar',
             title: 'Kullanıcılar',
-            tabBarIcon: ({ color, size }) => <Ionicons name="people-outline" size={size} color={color} />,
+            drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="people-outline" size={22} color={color} />,
           }}
         />
-        <Tabs.Screen
+        <Drawer.Screen
           name="raporlar"
           options={{
+            drawerLabel: 'Raporlar',
             title: 'Raporlar',
-            tabBarIcon: ({ color, size }) => <Ionicons name="stats-chart-outline" size={size} color={color} />,
+            drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="stats-chart-outline" size={22} color={color} />,
           }}
         />
-        <Tabs.Screen
+        <Drawer.Screen
           name="ayarlar"
           options={{
+            drawerLabel: 'Ayarlar',
             title: 'Ayarlar',
-            tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" size={size} color={color} />,
+            drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="settings-outline" size={22} color={color} />,
           }}
         />
 
         {/* Gizli Sayfalar */}
-        <Tabs.Screen name="index" options={{ href: null }} />
-        <Tabs.Screen name="taleplerim" options={{ href: null }} />
-        <Tabs.Screen name="teknisyen" options={{ href: null }} />
-        <Tabs.Screen name="explore" options={{ href: null }} />
-      </Tabs>
+        <Drawer.Screen name="yeni-talep" options={{ drawerItemStyle: { display: 'none' } }} />
+        <Drawer.Screen name="taleplerim" options={{ drawerItemStyle: { display: 'none' } }} />
+        <Drawer.Screen name="teknisyen" options={{ drawerItemStyle: { display: 'none' } }} />
+        <Drawer.Screen name="explore" options={{ drawerItemStyle: { display: 'none' } }} />
+      </Drawer>
     );
   }
 
-  // Müşteri Layout (varsayılan)
+  // Müşteri Layout (Varsayılan)
   return (
-    <Tabs screenOptions={screenOptions}>
-      <Tabs.Screen
+    <Drawer
+      screenOptions={screenOptions}
+      drawerContent={renderDrawerContent}
+    >
+      <Drawer.Screen
         name="index"
         options={{
-          title: 'Yeni Talep',
-          tabBarIcon: ({ color, size }) => <Ionicons name="add-circle-outline" size={size} color={color} />,
+          drawerLabel: 'Ana Sayfa',
+          title: 'Ana Sayfa',
+          drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="home-outline" size={22} color={color} />,
         }}
       />
-      <Tabs.Screen
+      <Drawer.Screen
+        name="yeni-talep"
+        options={{
+          drawerItemStyle: { display: 'none' },
+          title: 'Yeni Talep',
+          headerTitle: '',
+          headerShown: false,
+        }}
+      />
+      <Drawer.Screen
         name="taleplerim"
         options={{
+          drawerLabel: 'Taleplerim',
           title: 'Taleplerim',
-          tabBarIcon: ({ color, size }) => <Ionicons name="list-outline" size={size} color={color} />,
+          drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="list-outline" size={22} color={color} />,
         }}
       />
-      <Tabs.Screen
+      <Drawer.Screen
         name="ayarlar"
         options={{
+          drawerLabel: 'Ayarlar',
           title: 'Ayarlar',
-          tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" size={size} color={color} />,
+          drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="settings-outline" size={22} color={color} />,
         }}
       />
 
       {/* Gizli Sayfalar */}
-      <Tabs.Screen name="explore" options={{ href: null }} />
-      <Tabs.Screen name="teknisyen" options={{ href: null }} />
-      <Tabs.Screen name="yonetim" options={{ href: null }} />
-      <Tabs.Screen name="ekipler" options={{ href: null }} />
-      <Tabs.Screen name="raporlar" options={{ href: null }} />
-      <Tabs.Screen name="kullanicilar" options={{ href: null }} />
-    </Tabs>
+      <Drawer.Screen name="explore" options={{ drawerItemStyle: { display: 'none' } }} />
+      <Drawer.Screen name="teknisyen" options={{ drawerItemStyle: { display: 'none' } }} />
+      <Drawer.Screen name="yonetim" options={{ drawerItemStyle: { display: 'none' } }} />
+      <Drawer.Screen name="ekipler" options={{ drawerItemStyle: { display: 'none' } }} />
+      <Drawer.Screen name="raporlar" options={{ drawerItemStyle: { display: 'none' } }} />
+      <Drawer.Screen name="kullanicilar" options={{ drawerItemStyle: { display: 'none' } }} />
+    </Drawer>
   );
 }
