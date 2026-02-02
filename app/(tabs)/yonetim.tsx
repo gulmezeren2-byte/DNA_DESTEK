@@ -7,7 +7,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     FlatList,
-    Image,
     Modal,
     RefreshControl,
     ScrollView,
@@ -20,7 +19,9 @@ import {
 } from 'react-native';
 import AnimatedItem from '../../components/AnimatedList';
 import Logo from '../../components/Logo';
+import OptimizedImage from '../../components/OptimizedImage';
 import { ListSkeleton } from '../../components/Skeleton';
+import { DURUM_CONFIG } from '../../constants';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { db } from '../../firebaseConfig';
@@ -28,50 +29,19 @@ import { assignTalepToEkip, getActiveEkipler } from '../../services/ekipService'
 import { sendPushNotification } from '../../services/notificationService';
 import { getTalepler, subscribeToTalepler } from '../../services/talepService';
 import toast from '../../services/toastService';
+import { Ekip, Talep } from '../../types';
 
-interface Talep {
-    id: string;
-    baslik: string;
-    aciklama: string;
-    kategori: string;
-    durum: string;
-    oncelik: string;
-    projeAdi: string;
-    blokAdi?: string;
-    daireNo?: string;
-    musteriAdi: string;
-    musteriTelefon: string;
-    musteriId?: string;
-    olusturmaTarihi: { seconds: number };
-    atananTeknisyenId?: string;
-    atananTeknisyenAdi?: string;
-    atananEkipId?: string;
-    atananEkipAdi?: string;
-    fotograflar?: string[];
-}
-
-interface Ekip {
-    id: string;
-    ad: string;
-    renk: string;
-    uyeler: string[];
-}
-
-const durumConfig: Record<string, { bg: string; bgDark: string; text: string; textDark: string; icon: string; label: string }> = {
-    yeni: { bg: '#e3f2fd', bgDark: '#1a3a5c', text: '#1565c0', textDark: '#64b5f6', icon: 'hourglass-outline', label: 'Yeni' },
-    atandi: { bg: '#fff3e0', bgDark: '#3a2a1a', text: '#ef6c00', textDark: '#ffb74d', icon: 'person-outline', label: 'Atandı' },
-    islemde: { bg: '#e8f5e9', bgDark: '#1a3a1a', text: '#2e7d32', textDark: '#81c784', icon: 'construct-outline', label: 'İşlemde' },
-    beklemede: { bg: '#fce4ec', bgDark: '#3a1a2a', text: '#c2185b', textDark: '#f48fb1', icon: 'pause-circle-outline', label: 'Beklemede' },
-    cozuldu: { bg: '#e0f2f1', bgDark: '#1a3a3a', text: '#00796b', textDark: '#4db6ac', icon: 'checkmark-circle', label: 'Çözüldü' },
-    iptal: { bg: '#ffebee', bgDark: '#3a1a1a', text: '#c62828', textDark: '#ef5350', icon: 'close-circle', label: 'İptal' },
-};
+// const durumConfig removed - using global DURUM_CONFIG
 
 export default function YonetimScreen() {
     const { user } = useAuth();
     const { isDark, colors } = useTheme();
     const router = useRouter();
 
-    const [talepler, setTalepler] = useState<Talep[]>([]);
+    // State
+    // State Strategy Refactor: Split Head (Realtime) & Tail (Pagination)
+    const [headData, setHeadData] = useState<Talep[]>([]); // First 20 items (Realtime)
+    const [tailData, setTailData] = useState<Talep[]>([]); // Loaded via pagination (Static)
     const [ekipler, setEkipler] = useState<Ekip[]>([]);
     const [yukleniyor, setYukleniyor] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -79,6 +49,7 @@ export default function YonetimScreen() {
     // Pagination State
     const [lastDoc, setLastDoc] = useState<any>(null);
     const [loadingMore, setLoadingMore] = useState(false);
+    const [hasMore, setHasMore] = useState(true);
 
     const [seciliTalep, setSeciliTalep] = useState<Talep | null>(null);
     const [detayModalVisible, setDetayModalVisible] = useState(false);
@@ -88,40 +59,30 @@ export default function YonetimScreen() {
     const [aramaMetni, setAramaMetni] = useState('');
     const [tamEkranFoto, setTamEkranFoto] = useState<string | null>(null);
 
-    // Initial Load / Filter Change
+    // Derived State: Merge Head + Tail deterministically
+    // Logic: Head is truth. Tail items that exist in Head are filtered out.
+    // This prevents duplicates if an item moves from Paged area to Top area (e.g. status change).
+    const talepler = React.useMemo(() => {
+        const headIds = new Set(headData.map(t => t.id));
+        const filteredTail = tailData.filter(t => !headIds.has(t.id));
+        return [...headData, ...filteredTail];
+    }, [headData, tailData]);
+
+    // Manual Refresh
     const verileriYukle = async (isRefresh = false) => {
-        if (!isRefresh) setYukleniyor(true);
+        setRefreshing(true);
+        // Resetting logic handled by Effect dependency on 'filtre' mostly.
+        // But for manual pull-to-refresh, we might want to re-fetch ekipler or just wait for realtime.
         try {
-            // Filtreleri hazırla
-            const queryOptions: any = {};
-            if (filtre === 'yeni') queryOptions.durum = 'yeni';
-            if (filtre === 'atanmamis') queryOptions.atanmamis = true;
-            if (filtre === 'acil') queryOptions.oncelik = 'acil';
-
-            // İlk sayfa yükle (lastDoc: null)
-            const result = await getTalepler(user?.uid || '', 'yonetim', queryOptions, null, 20);
-
-            if (result.success && result.talepler) {
-                setTalepler(result.talepler as Talep[]);
-                setLastDoc(result.lastVisible);
-            }
-
-            // Ekipleri yükle
-            const ekipResult = await getActiveEkipler();
-            if (ekipResult.success && ekipResult.ekipler) {
-                setEkipler(ekipResult.ekipler as Ekip[]);
-            }
-        } catch (error) {
-            console.error('Veri yükleme hatası:', error);
-        }
-
-        setYukleniyor(false);
+            const res = await getActiveEkipler();
+            if (res.success && res.data) setEkipler(res.data as Ekip[]);
+        } catch (e) { }
         setRefreshing(false);
     };
 
     // Load More (Infinite Scroll)
     const dahaFazlaYukle = async () => {
-        if (loadingMore || !lastDoc) return;
+        if (loadingMore || !hasMore || !lastDoc) return;
 
         setLoadingMore(true);
         try {
@@ -130,65 +91,71 @@ export default function YonetimScreen() {
             if (filtre === 'atanmamis') queryOptions.atanmamis = true;
             if (filtre === 'acil') queryOptions.oncelik = 'acil';
 
-            // Sonraki sayfa (lastDoc kullanarak)
+            // Load next page
             const result = await getTalepler(user?.uid || '', 'yonetim', queryOptions, lastDoc, 20);
 
-            if (result.success && result.talepler && result.talepler.length > 0) {
-                setTalepler(prev => [...prev, ...result.talepler]); // Append data
+            if (result.success && result.data && result.data.length > 0) {
+                // Append to TAIL
+                setTailData(prev => {
+                    const existingIds = new Set(prev.map(t => t.id));
+                    const newItems = result.data!.filter(t => !existingIds.has(t.id));
+                    return [...prev, ...newItems];
+                });
+
                 setLastDoc(result.lastVisible);
+                if (!result.lastVisible || result.data.length < 20) setHasMore(false);
             } else {
-                setLastDoc(null); // End of list
+                setHasMore(false);
             }
         } catch (error) {
             console.error('Sayfalama hatası:', error);
+        } finally {
+            setLoadingMore(false);
         }
-        setLoadingMore(false);
     };
 
+    // Realtime Subscription Effect
     useEffect(() => {
         if (!user) return;
 
         setYukleniyor(true);
-        // Realtime Subscription
+        setHeadData([]);
+        setTailData([]); // Reset tail on filter change
+        setLastDoc(null);
+        setHasMore(true);
+
         const filters: any = {};
         if (filtre === 'yeni') filters.durum = 'yeni';
         if (filtre === 'atanmamis') filters.atanmamis = true;
         if (filtre === 'acil') filters.oncelik = 'acil';
 
-        const unsubscribe = subscribeToTalepler(user.uid, user.rol, filters, (result) => {
-            if (result.success && result.talepler) {
-                // Realtime veriyi al (ilk 50 veya filtreli set)
-                // Pagination ile çakışmaması için basit mod: Sadece ilk yükleme ve güncellemeler realtime.
-                setTalepler(prev => {
-                    // Infinite Scroll verisini korumak zor, "Load More" yapıldığında realtime seti sadece başı güncellemeli.
-                    // Şimdilik basitçe ilk 50 güncellenir.
-                    // Eğer lastDoc varsa (yani loadMore yapıldıysa), kullanıcının listesi bozulmasın diye
-                    // sadece "yeni" veri geldiğinde ne yapmalı?
-                    // Burada en güvenli yol: Realtime sadece Taze Veriyi (ilk sayfa) yönetir.
-                    // Eğer daha fazla veri yüklendiyse bile, bu function sadece "result.talepler" (ilk 50) döner.
-                    // Bu durumda 51+ olanlar kaybolur mu? Evet.
-                    // Çözüm: Hibrit zor. infinite scroll varsa realtime'ı sadece "update" olarak kullanmak lazım (add/remove değil).
-                    // Veya basitçe: Realtime geldiğinde tüm listeyi yenile (ve hasMore'u güncelle).
-                    // Kulanıcı en aşağıdaysa ve liste yenilenirse yukarı zıplar mı? Evet.
+        // Subscribe ONLY to the first page (Head)
+        const unsubscribe = subscribeToTalepler(user.id, user.rol, filters, (result) => {
+            if (result.success && result.data) {
+                const freshData = result.data as Talep[];
 
-                    // Karar: Basit Realtime. Kullanıcı realtime lüksü için scroll pozisyonunu feda eder :) 
-                    // (Zaten 50 tane veri var filterlı görünümde, çok sorun olmaz).
-                    return result.talepler as Talep[];
+                // Update HEAD data
+                setHeadData(freshData);
+
+                // Update pagination cursor (lastDoc) ONLY if we haven't loaded more pages yet.
+                // If tailData exists, it means user has paged. We shouldn't mess with lastDoc from page 1.
+                // However, for the very first load, we need to set it.
+                setLastDoc((currentLastDoc: any) => {
+                    // Logic: If lastDoc is null (fresh load), take it.
+                    if (!currentLastDoc) return result.lastVisible;
+                    return currentLastDoc;
                 });
 
-                if (result.talepler && result.talepler.length >= 50) {
-                    setLastDoc(result.talepler[result.talepler.length - 1].olusturmaTarihi);
-                } else {
-                    setLastDoc(null);
-                }
+                // If less than page size returned, no more data
+                if (result.data.length < 20) setHasMore(false);
 
                 setYukleniyor(false);
             }
         });
 
-        // Ekipleri de yükleyelim (statik kalsın)
+        // Load active ekipler
         getActiveEkipler().then(res => {
-            if (res.success && res.ekipler) setEkipler(res.ekipler as Ekip[]);
+            if (res.success && res.data) setEkipler(res.data as Ekip[]);
         });
 
         return () => {
@@ -201,9 +168,16 @@ export default function YonetimScreen() {
         verileriYukle(true);
     }, [filtre]);
 
-    const formatTarih = (timestamp: { seconds: number }) => {
-        if (!timestamp?.seconds) return '-';
-        const date = new Date(timestamp.seconds * 1000);
+    const formatTarih = (timestamp: any) => {
+        if (!timestamp) return '-';
+        let date;
+        if (timestamp.toDate) {
+            date = timestamp.toDate();
+        } else if (timestamp.seconds) {
+            date = new Date(timestamp.seconds * 1000);
+        } else {
+            date = new Date(timestamp);
+        }
         return date.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
     };
 
@@ -220,16 +194,17 @@ export default function YonetimScreen() {
             }
 
             // Bildirim Gönder
-            if (seciliTalep.musteriId) {
+            const targetUserId = seciliTalep.olusturanId; // musteriId removed from type
+            if (targetUserId) {
                 try {
-                    const musteriDoc = await getDoc(doc(db, 'users', seciliTalep.musteriId));
+                    const musteriDoc = await getDoc(doc(db, 'users', targetUserId));
                     if (musteriDoc.exists()) {
                         const musteriData = musteriDoc.data();
                         if (musteriData?.pushToken) {
                             await sendPushNotification(
                                 musteriData.pushToken,
                                 'Ekip Atandı 🛠️',
-                                `Sayın ${seciliTalep.musteriAdi}, talebiniz için ${ekip.ad} atandı.`
+                                `Sayın ${seciliTalep.musteriAdi || seciliTalep.olusturanAd || 'Müşteri'}, talebiniz için ${ekip.ad} atandı.`
                             );
                         }
                     }
@@ -277,7 +252,8 @@ export default function YonetimScreen() {
         const metin = aramaMetni.toLowerCase();
         return (
             t.baslik.toLowerCase().includes(metin) ||
-            t.musteriAdi.toLowerCase().includes(metin) ||
+            (t.musteriAdi && t.musteriAdi.toLowerCase().includes(metin)) ||
+            (t.olusturanAd && t.olusturanAd.toLowerCase().includes(metin)) ||
             t.projeAdi.toLowerCase().includes(metin) ||
             (t.blokAdi ? t.blokAdi.toLowerCase().includes(metin) : false) ||
             (t.kategori ? t.kategori.toLowerCase().includes(metin) : false)
@@ -432,7 +408,7 @@ export default function YonetimScreen() {
                         data={listelenecekTalepler}
                         renderItem={({ item, index }: { item: Talep; index: number }) => {
                             const talep = item;
-                            const durum = durumConfig[talep.durum] || durumConfig.yeni;
+                            const durum = DURUM_CONFIG[talep.durum as keyof typeof DURUM_CONFIG] || DURUM_CONFIG.yeni;
                             return (
                                 <AnimatedItem index={index}>
                                     <TouchableOpacity
@@ -577,7 +553,7 @@ export default function YonetimScreen() {
                                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.detayFotoScroll}>
                                             {seciliTalep.fotograflar.map((foto, index) => (
                                                 <TouchableOpacity key={index} onPress={() => setTamEkranFoto(foto)}>
-                                                    <Image source={{ uri: foto }} style={styles.detayFoto} />
+                                                    <OptimizedImage source={{ uri: foto }} style={styles.detayFoto} />
                                                 </TouchableOpacity>
                                             ))}
                                         </ScrollView>
@@ -701,7 +677,7 @@ export default function YonetimScreen() {
                         <Ionicons name="close" size={30} color="#fff" />
                     </TouchableOpacity>
                     {tamEkranFoto && (
-                        <Image source={{ uri: tamEkranFoto }} style={styles.fullScreenImage} resizeMode="contain" />
+                        <OptimizedImage source={{ uri: tamEkranFoto }} style={styles.fullScreenImage} contentFit="contain" />
                     )}
                 </View>
             </Modal>

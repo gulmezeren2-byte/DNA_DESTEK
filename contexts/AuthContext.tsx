@@ -3,40 +3,28 @@ import React, { createContext, ReactNode, useContext, useEffect, useState } from
 import { db } from '../firebaseConfig';
 import { getCurrentUser, loginUser, logoutUser, onAuthChange } from '../services/authService';
 import { registerForPushNotificationsAsync } from '../services/notificationService';
-
-// Kullanıcı tipi
-interface User {
-    uid: string;
-    email: string;
-    ad: string;
-    soyad: string;
-    telefon: string;
-    rol: 'musteri' | 'teknisyen' | 'yonetim';
-    kategori?: string;
-    aktif: boolean;
-    pushToken?: string;
-}
+import { DNAUser } from '../types';
 
 // Login sonucu tipi
 interface LoginResult {
     success: boolean;
     message?: string;
-    user?: User;
+    user?: DNAUser;
 }
 
 // Context tipi
 interface AuthContextType {
-    user: User | null;
+    user: DNAUser | null;
     loading: boolean;
     error: string | null;
     login: (email: string, password: string) => Promise<LoginResult>;
     logout: () => Promise<{ success: boolean; message?: string }>;
-    refreshUser: () => Promise<User | null>;
+    refreshUser: () => Promise<DNAUser | null>;
     isAuthenticated: boolean;
     isMusteri: boolean;
     isTeknisyen: boolean;
     isYonetim: boolean;
-    setUser: (user: User | null) => void;
+    setUser: (user: DNAUser | null) => void;
 }
 
 // Context oluştur
@@ -49,7 +37,7 @@ interface AuthProviderProps {
 
 // Provider bileşeni
 export const AuthProvider = ({ children }: AuthProviderProps) => {
-    const [user, setUser] = useState<User | null>(null);
+    const [user, setUser] = useState<DNAUser | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -65,12 +53,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         }, 8000);
 
         // Auth durumu değişikliğini dinle
-        const unsubscribe = onAuthChange(async (userData: User | null) => {
+        const unsubscribe = onAuthChange(async (userData: DNAUser | null) => {
             if (!isMounted) return;
 
             clearTimeout(timeout);
 
-            setUser(userData as User | null);
+            setUser(userData);
 
             // Kullanıcı giriş yaptıysa push token al ve kaydet
             if (userData?.uid) {
@@ -105,14 +93,14 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
         const result = await loginUser(email, password);
 
-        if (result.success && result.user) {
-            setUser(result.user as User);
+        if (result.success && result.data?.user) {
+            setUser(result.data.user);
+            return { success: true, user: result.data.user };
         } else {
-            setError(result.message || 'Giriş başarısız');
+            const msg = result.message || 'Giriş başarısız';
+            setError(msg);
+            return { success: false, message: msg };
         }
-
-        setLoading(false);
-        return result as LoginResult;
     };
 
     // Çıkış fonksiyonu
@@ -129,10 +117,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     };
 
     // Kullanıcı bilgilerini yenile
-    const refreshUser = async (): Promise<User | null> => {
+    const refreshUser = async (): Promise<DNAUser | null> => {
         const userData = await getCurrentUser();
-        setUser(userData as User | null);
-        return userData as User | null;
+        setUser(userData);
+        return userData;
     };
 
     const value: AuthContextType = React.useMemo(() => ({

@@ -8,7 +8,6 @@ import {
     ActivityIndicator,
     Alert,
     FlatList,
-    Image,
     Modal,
     Platform,
     ScrollView,
@@ -17,14 +16,13 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
+import OptimizedImage from '../../components/OptimizedImage';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getProjeler } from '../../services/ekipService';
-import { uploadImage } from '../../services/storageService';
 import { createTalep } from '../../services/talepService';
-import toast from '../../services/toastService';
 
 // Dropdown bileşeni
 interface DropdownProps {
@@ -155,8 +153,8 @@ export default function YeniTalepScreen() {
     useEffect(() => {
         const yukle = async () => {
             const result = await getProjeler();
-            if (result.success) {
-                setProjeler(result.projeler as Proje[]);
+            if (result.success && result.data) {
+                setProjeler(result.data);
             }
             setProjeYukleniyor(false);
         };
@@ -198,12 +196,17 @@ export default function YeniTalepScreen() {
     const resmiIsleVeEkle = async (uri: string) => {
         try {
             setResimYukleniyor(true);
+            // Compress heavily to ensure Firestore 1MB limit isn't breached easily
             const result = await ImageManipulator.manipulateAsync(
                 uri,
-                [{ resize: { width: 800 } }],
-                { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG }
+                [{ resize: { width: 600 } }], // Reduced width for safety
+                { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true }
             );
-            setFotograflar([...fotograflar, result.uri]);
+
+            if (result.base64) {
+                const base64Uri = `data:image/jpeg;base64,${result.base64}`;
+                setFotograflar([...fotograflar, base64Uri]);
+            }
         } catch (error) {
             console.error('Resim işleme hatası:', error);
             Alert.alert('Hata', 'Fotoğraf işlenirken bir sorun oluştu.');
@@ -222,7 +225,7 @@ export default function YeniTalepScreen() {
         const result = await ImagePicker.launchCameraAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
-            quality: 1,
+            quality: 0.5, // Lower quality initial capture
         });
 
         if (!result.canceled) {
@@ -240,7 +243,7 @@ export default function YeniTalepScreen() {
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
-            quality: 1,
+            quality: 0.5, // Lower quality initial select
         });
 
         if (!result.canceled) {
@@ -290,38 +293,27 @@ export default function YeniTalepScreen() {
         setYukleniyor(true);
 
         try {
-            const yuklenenFotoUrls: string[] = [];
-            if (fotograflar.length > 0) {
-                for (let i = 0; i < fotograflar.length; i++) {
-                    const uri = fotograflar[i];
-                    const filename = `talep_${user?.uid}_${Date.now()}_${i}.jpg`;
-                    const path = `talepler/${user?.uid}/${filename}`;
+            // Fotograflar zaten Base64 formatında state'te tutuluyor
+            // Direkt Firestore'a kaydedeceğiz.
 
-                    try {
-                        const result = await uploadImage(uri, path);
-                        if (result.success) {
-                            yuklenenFotoUrls.push(result.downloadURL!);
-                        } else {
-                            console.error('Fotoğraf yüklenemedi:', uri, result.message);
-                            toast.error(`Fotoğraf ${i + 1} yüklenemedi`);
-                        }
-                    } catch (imgError) {
-                        console.error('Fotoğraf yükleme hatası:', imgError);
-                    }
-                }
-            }
             const result = await createTalep({
-                musteriId: user?.uid,
+                olusturanId: user?.uid!,
+                olusturanAd: `${user?.ad} ${user?.soyad}`,
+                olusturanTelefon: telefon,
+                // Backward compatibility if needed:
                 musteriAdi: `${user?.ad} ${user?.soyad}`,
                 musteriTelefon: telefon,
+
                 projeAdi: seciliProje,
                 blokAdi: seciliBlok,
                 daireNo: seciliDaire,
                 kategori: seciliKategori,
                 baslik: sorunBasligi,
                 aciklama: aciklama,
-                fotograflar: yuklenenFotoUrls,
+                fotograflar: fotograflar, // Base64 array
+                oncelik: 'normal',
             });
+
 
             if (result.success) {
                 Platform.OS === 'web'
@@ -454,7 +446,7 @@ export default function YeniTalepScreen() {
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.fotoList}>
                             {fotograflar.map((foto, index) => (
                                 <View key={index} style={styles.fotoWrapper}>
-                                    <Image source={{ uri: foto }} style={styles.fotoPreview} />
+                                    <OptimizedImage source={{ uri: foto }} style={styles.fotoPreview} />
                                     <TouchableOpacity
                                         style={styles.fotoSilBtn}
                                         onPress={() => fotografSil(index)}
@@ -464,7 +456,7 @@ export default function YeniTalepScreen() {
                                 </View>
                             ))}
 
-                            {fotograflar.length < 2 && (
+                            {fotograflar.length < 3 && (
                                 <TouchableOpacity
                                     style={[styles.fotoEkleBtn, { borderColor: colors.border, backgroundColor: isDark ? colors.inputBg : '#f8f9fa' }]}
                                     onPress={fotografSec}
@@ -482,7 +474,7 @@ export default function YeniTalepScreen() {
                             )}
                         </ScrollView>
                         <Text style={[styles.fotoHint, { color: colors.textMuted }]}>
-                            En fazla 2 fotoğraf ekleyebilirsiniz. (Max 800px)
+                            En fazla 3 fotoğraf ekleyebilirsiniz. (Max 800px)
                         </Text>
                     </View>
 

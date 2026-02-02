@@ -12,7 +12,6 @@ import {
   getFirestore,
   initializeFirestore
 } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
 import { Platform } from 'react-native';
 
 const firebaseConfig = {
@@ -105,7 +104,5 @@ function extractAuth(app: FirebaseApp): FirebaseAuth.Auth {
   return (FirebaseAuth as any).getAuth(app);
 }
 
-const storage = getStorage(app);
-
-export { auth, db, storage };
+export { auth, db };
 

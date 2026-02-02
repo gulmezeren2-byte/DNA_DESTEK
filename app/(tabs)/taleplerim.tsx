@@ -5,7 +5,6 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
-    Image,
     Modal,
     Platform,
     RefreshControl,
@@ -15,89 +14,25 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
 import AnimatedItem from '../../components/AnimatedList';
 import Logo from '../../components/Logo';
+import OptimizedImage from '../../components/OptimizedImage';
 import { ListSkeleton } from '../../components/Skeleton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getTalepler, puanlaTalep, subscribeToTalepler, updateTalepDurum } from '../../services/talepService';
 import toast from '../../services/toastService';
+import { Talep } from '../../types';
 
-interface Talep {
-    id: string;
-    baslik: string;
-    aciklama: string;
-    kategori: string;
-    durum: string;
-    projeAdi: string;
-    blokAdi?: string;
-    daireNo?: string;
-    olusturmaTarihi: { seconds: number };
-    oncelik: string;
-    atananTeknisyenAdi?: string;
-    fotograflar?: string[];
-    puan?: number;
-    degerlendirme?: string;
-}
 
-const durumConfig: Record<string, { bg: string; bgDark: string; text: string; textDark: string; icon: string; label: string; message: string }> = {
-    yeni: {
-        bg: '#e3f2fd', bgDark: '#1a3a5c',
-        text: '#1565c0', textDark: '#64b5f6',
-        icon: 'hourglass-outline',
-        label: 'Sırada',
-        message: 'Talebiniz değerlendirme sırasına alındı'
-    },
-    atandi: {
-        bg: '#fff3e0', bgDark: '#3a2a1a',
-        text: '#ef6c00', textDark: '#ffb74d',
-        icon: 'person-outline',
-        label: 'Atandı',
-        message: 'Bir teknisyen görevlendirildi'
-    },
-    islemde: {
-        bg: '#e8f5e9', bgDark: '#1a3a1a',
-        text: '#2e7d32', textDark: '#81c784',
-        icon: 'construct-outline',
-        label: 'İşlemde',
-        message: 'Sorun üzerinde çalışılıyor'
-    },
-    beklemede: {
-        bg: '#fce4ec', bgDark: '#3a1a2a',
-        text: '#c2185b', textDark: '#f48fb1',
-        icon: 'pause-circle-outline',
-        label: 'Beklemede',
-        message: 'Ek bilgi veya malzeme bekleniyor'
-    },
-    cozuldu: {
-        bg: '#e0f2f1', bgDark: '#1a3a3a',
-        text: '#00796b', textDark: '#4db6ac',
-        icon: 'checkmark-circle',
-        label: 'Çözüldü',
-        message: 'Sorun başarıyla giderildi'
-    },
-    iptal: {
-        bg: '#ffebee', bgDark: '#3a1a1a',
-        text: '#c62828', textDark: '#ef5350',
-        icon: 'close-circle',
-        label: 'İptal Edildi',
-        message: 'Bu talep iptal edildi'
-    },
-    kapatildi: {
-        bg: '#eceff1', bgDark: '#2a2a2a',
-        text: '#546e7a', textDark: '#90a4ae',
-        icon: 'close-circle-outline',
-        label: 'Kapatıldı',
-        message: 'Talep kapatıldı'
-    },
-};
 
 export default function TaleplerimScreen() {
     const { user, logout } = useAuth();
     const { isDark, colors } = useTheme();
     const router = useRouter();
+    // State
     const [talepler, setTalepler] = useState<Talep[]>([]);
     const [activeTab, setActiveTab] = useState<'aktif' | 'gecmis'>('aktif');
     const [yukleniyor, setYukleniyor] = useState(true);
@@ -118,26 +53,44 @@ export default function TaleplerimScreen() {
     const [yorum, setYorum] = useState('');
     const [puanYukleniyor, setPuanYukleniyor] = useState(false);
 
+    // Filters based on Tab
+    const getFilters = (tab: 'aktif' | 'gecmis') => {
+        if (tab === 'aktif') {
+            return {
+                durumlar: ['yeni', 'atandi', 'islemde', 'beklemede'],
+                tab: 'aktif'
+            };
+        } else {
+            return {
+                durumlar: ['cozuldu', 'iptal', 'kapatildi'],
+                tab: 'gecmis'
+            };
+        }
+    };
 
-
-    const talepleriYukle = async (isRefresh = false) => {
+    const talepleriYukle = async (isRefresh = false, tab = activeTab) => {
         if (!user) return;
 
-        if (!isRefresh) setYukleniyor(true);
         if (isRefresh) {
+            setRefreshing(true);
             setHasMore(true);
             setLastDoc(null);
+        } else {
+            setYukleniyor(true);
         }
 
         try {
-            // isRefresh ise null, değilse lastDoc kullan? Hayır, talepleriYukle her zaman initial load'dur (refresh veya ilk açılış).
-            // Daha fazla yükle ayrı fonksiyondur.
-            const result = await getTalepler(user.uid, user.rol, {}, null, 15);
+            const filters = getFilters(tab);
+            const result = await getTalepler(user.id, user.rol, filters, null, 15);
+
             if (result.success) {
-                setTalepler(result.talepler as Talep[]);
+                setTalepler(result.data as Talep[]);
                 setLastDoc(result.lastVisible);
-                if (!result.lastVisible || (result.talepler && result.talepler.length < 15)) setHasMore(false);
-                else setHasMore(true);
+                if (!result.lastVisible || (result.data && result.data.length < 15)) {
+                    setHasMore(false);
+                } else {
+                    setHasMore(true);
+                }
             }
         } catch (error) {
             console.error(error);
@@ -152,11 +105,19 @@ export default function TaleplerimScreen() {
 
         setLoadingMore(true);
         try {
-            const result = await getTalepler(user.uid, user.rol, {}, lastDoc, 15);
-            if (result.success && result.talepler && result.talepler.length > 0) {
-                setTalepler(prev => [...prev, ...result.talepler]);
+            const filters = getFilters(activeTab);
+            const result = await getTalepler(user.id, user.rol, filters, lastDoc, 15);
+
+            if (result.success && result.data && result.data.length > 0) {
+                // Duplicate check
+                setTalepler(prev => {
+                    const existingIds = new Set(prev.map(t => t.id));
+                    const newItems = result.data!.filter(t => !existingIds.has(t.id));
+                    return [...prev, ...newItems];
+                });
+
                 setLastDoc(result.lastVisible);
-                if (!result.lastVisible || result.talepler.length < 15) setHasMore(false);
+                if (!result.lastVisible || result.data.length < 15) setHasMore(false);
             } else {
                 setHasMore(false);
             }
@@ -167,74 +128,110 @@ export default function TaleplerimScreen() {
         }
     };
 
+    // Tab değişince verileri yeniden yükle
+    useEffect(() => {
+        if (user) {
+            setTalepler([]);
+            setLastDoc(null);
+            setHasMore(true);
+            talepleriYukle(false, activeTab);
+        }
+    }, [activeTab, user]); // user dependency added just in case
+
+    // Realtime Updates (Sadece Aktif Tab için mantıklı)
     useEffect(() => {
         if (!user) return;
 
-        // İlk yükleme (Subscription)
-        // Hibrit: İlk sayfa Realtime, kalanı Pagination
-        setYukleniyor(true);
-        const unsubscribe = subscribeToTalepler(user.uid, user.rol, {}, (result) => {
-            if (result.success && result.talepler) {
-                // Eğer sayfalama ile daha fazla veri yüklendiyse, realtime güncellemeyi
-                // mevcut listenin başına eklemeli veya birleştirmeliyiz.
-                // Basitlik için: Realtime sadece "başlangıç listesini" günceller.
-                // Eğer kullanıcı çok aşağı indiyse ve yeni veri gelirse liste resetlenebilir veya
-                // yeni veri yukarıda belirir.
+        // Sadece 'aktif' tabdayken veya genel dinleme yapılacaksa.
+        // Subscription filtreli olmalı ki 'gecmis' tab'da alakasız veri gelmesin.
+        const filters = getFilters(activeTab);
 
-                // Burada basit strateji: Gelen veri (ilk 50) her zaman üstüne yazar.
-                // Ancak "dahaFazlaYukle" ile gelen eski verileri korumak lazım mı?
-                // Genellikle realtime + infinite scroll zordur.
-                // Çözüm: Realtime sadece "yeni" veri geldiğinde `talepler` state'inin başını günceller.
-                // Ama `onSnapshot` tüm seti (50) döndürür.
+        // Subscription pagination ile çakışabilir. 
+        // Strateji: Realtime updates sadece listenin BAŞINA ekleme yapar veya günceller.
+        // Pagination (load more) listenin SONUNA ekleme yapar.
+        // Bu ikisi uyumlu çalışabilir.
 
+        const unsubscribe = subscribeToTalepler(user.id, user.rol, filters, (result) => {
+            if (result.success && result.data) {
                 setTalepler(prev => {
-                    // Eğer sayfalama yapılmadıysa (sadece ilk set varsa), direk değiştir.
-                    if (!lastDoc) return result.talepler as Talep[];
+                    if (activeTab === 'aktif') {
+                        // Aktif tab: Realtime + Pagination Merge Strategy
+                        const freshData = result.data as Talep[];
 
-                    // Eğer sayfalama yapıldıysa, ilk 50'yi güncelle, gerisini koru?
-                    // Bu ID çakışması yapabilir.
-                    // En temiz hibrit: Sayfalamayı sadece "geçmiş" için kullan, realtime'ı "güncel" için.
-                    // Şimdilik: Realtime veriyi bas, lastDoc'u güncelleme (çünkü snapshot'tan lastDoc almak zor).
-                    // Aslında snapshot.docs son elemanı verir ama burada map lenmiş veri dönüyor.
-                    // İdeal çözüm için subscribeToTalepler'in snapshot da dönmesi lazım.
+                        // If initial load or simple update
+                        if (prev.length === 0) return freshData;
 
-                    // Kestirme: Realtime sarmalayıcı sadece ilk seti (50) yönetir. 
-                    // Sayfalama (load more) yapıldığında, kullanıcı en alta inmiştir.
-                    // Yeni veri gelirse yukarıda belirir.
-                    // Bu durumda 'prev' ile birleştirme yapmayalım, çünkü snapshot zaten "son halini" verir (ilk 50 için).
-                    // Eğer 50'den fazla veri varsa ve biz onları loadMore ile yüklediysek, onları korumalıyız.
-                    // Ama snapshot 50 tane döndürecek.
+                        // Preserve paginated data (tail)
+                        const freshIds = new Set(freshData.map(t => t.id));
+                        const tail = prev.filter(t => !freshIds.has(t.id));
 
-                    // Basit Mod: Realtime çalışırken infinite scroll'u "manuel" tutalım.
-                    // Snapshot gelince sadece ilk 50'yi set edelim.
-                    return result.talepler as Talep[];
+                        return [...freshData, ...tail];
+                    } else {
+                        // Geçmiş tab: Realtime updates ignored to prevent pagination conflicts
+                        // unless it's the initial load (empty list)
+                        if (prev.length === 0) return result.data as Talep[];
+                        return prev;
+                    }
                 });
 
-                if (result.talepler.length < 50) setHasMore(false);
-                else setHasMore(true);
+                // Update lastDoc only on initial load
+                if (activeTab === 'aktif') {
+                    setLastDoc((currentLastDoc: any) => {
+                        if (!currentLastDoc) return result.lastVisible;
+                        return currentLastDoc;
+                    });
+                } else {
+                    // History tab initial load logic via subscription (if used)
+                    // But usually history tab might disable realtime or just use it for initial.
+                    // If we returned data for history, set lastDoc if empty
+                    setLastDoc((currentLastDoc: any) => {
+                        if (!currentLastDoc) return result.lastVisible;
+                        return currentLastDoc;
+                    });
+                }
 
-                // Not: Snapshot her tetiklendiğinde yukleniyor false olur.
-                setYukleniyor(false);
-            } else {
-                console.error("Subscription error:", result.message);
-                setYukleniyor(false);
-                toast.error("Veri yüklenirken hata oluştu: " + result.message);
+                if (activeTab === 'aktif') {
+                    if (result.data.length < 50) setHasMore(false);
+                    // Else, if 50 items, hasMore depends on if we already loaded more?
+                    // Safe to leave hasMore as is if we have data.
+                    setYukleniyor(false);
+                } else {
+                    // History tab initial load finish
+                    if (result.data.length < 50) setHasMore(false);
+                    setYukleniyor(false);
+                }
             }
         });
+
+        // Geçmiş tabda realtime dinlemeyi kapatalım (pagination bozulmasın diye)
+        // Kullanıcı pull-to-refresh yapabilir.
+        if (activeTab === 'gecmis') {
+            unsubscribe(); // Hemen iptal et
+            return () => { };
+        }
 
         return () => {
             if (unsubscribe) unsubscribe();
         }
-    }, [user]);
+    }, [user, activeTab]);
 
     const onRefresh = () => {
         setRefreshing(true);
-        talepleriYukle(true);
+        // Refresh yapınca state sıfırlanır, talepleriYukle çağrılır
+        talepleriYukle(true, activeTab);
     };
 
-    const formatTarih = (timestamp: { seconds: number }) => {
-        if (!timestamp?.seconds) return '-';
-        const date = new Date(timestamp.seconds * 1000);
+    const formatTarih = (timestamp: any) => {
+        if (!timestamp) return '-';
+        let date;
+        if (timestamp.toDate) {
+            date = timestamp.toDate();
+        } else if (timestamp.seconds) {
+            date = new Date(timestamp.seconds * 1000);
+        } else {
+            date = new Date(timestamp);
+        }
+
         const now = new Date();
         const diff = now.getTime() - date.getTime();
         const days = Math.floor(diff / (1000 * 60 * 60 * 24));
@@ -585,7 +582,7 @@ export default function TaleplerimScreen() {
                                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.detayFotoScroll}>
                                             {seciliTalep.fotograflar.map((foto, index) => (
                                                 <TouchableOpacity key={index} onPress={() => setTamEkranFoto(foto)}>
-                                                    <Image source={{ uri: foto }} style={styles.detayFoto} />
+                                                    <OptimizedImage source={{ uri: foto }} style={styles.detayFoto} />
                                                 </TouchableOpacity>
                                             ))}
                                         </ScrollView>
@@ -730,7 +727,7 @@ export default function TaleplerimScreen() {
                         <Ionicons name="close" size={30} color="#fff" />
                     </TouchableOpacity>
                     {tamEkranFoto && (
-                        <Image source={{ uri: tamEkranFoto }} style={styles.fullScreenImage} resizeMode="contain" />
+                        <OptimizedImage source={{ uri: tamEkranFoto }} style={styles.fullScreenImage} contentFit="contain" />
                     )}
                 </View>
             </Modal>

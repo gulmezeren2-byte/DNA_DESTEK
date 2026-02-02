@@ -7,21 +7,19 @@ import React, { useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
-    KeyboardAvoidingView,
     Platform,
     ScrollView,
-    StatusBar,
     StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
 import CustomHeader from '../../components/CustomHeader';
+import { APP_CONFIG } from '../../constants';
 import { useAuth } from '../../contexts/AuthContext';
-import { useTheme } from '../../contexts/ThemeContext';
+import { ThemeMode, useTheme } from '../../contexts/ThemeContext';
 import { auth, db } from '../../firebaseConfig';
-import { logoutUser } from '../../services/authService';
 import toast from '../../services/toastService';
 
 const rolEtiketleri: Record<string, { label: string; color: string; icon: string }> = {
@@ -31,8 +29,8 @@ const rolEtiketleri: Record<string, { label: string; color: string; icon: string
 };
 
 export default function AyarlarScreen() {
-    const { user, setUser } = useAuth();
-    const { isDark, colors, toggleTheme } = useTheme();
+    const { user, setUser, logout } = useAuth();
+    const { isDark, colors, themeMode, setThemeMode } = useTheme();
     const router = useRouter();
 
     // Profil düzenleme
@@ -51,7 +49,25 @@ export default function AyarlarScreen() {
 
     const rolBilgisi = rolEtiketleri[user?.rol || 'musteri'];
 
-    // Profil kaydet
+    const handleLogout = () => {
+        if (Platform.OS === 'web') {
+            if (window.confirm('Çıkış yapmak istediğinizden emin misiniz?')) {
+                logout();
+            }
+        } else {
+            Alert.alert('Çıkış Yap', 'Çıkış yapmak istediğinizden emin misiniz?', [
+                { text: 'İptal', style: 'cancel' },
+                { text: 'Çıkış Yap', style: 'destructive', onPress: logout }
+            ]);
+        }
+    };
+
+    const themeOptions: { mode: ThemeMode; label: string; icon: string }[] = [
+        { mode: 'light', label: 'Açık', icon: 'sunny-outline' },
+        { mode: 'dark', label: 'Koyu', icon: 'moon-outline' },
+        { mode: 'system', label: 'Sistem', icon: 'phone-portrait-outline' },
+    ];
+
     // Profil kaydet
     const profilKaydet = async () => {
         if (!user?.uid) {
@@ -68,14 +84,12 @@ export default function AyarlarScreen() {
             console.log('Profil güncelleme başladı:', user.uid);
             const userRef = doc(db, 'users', user.uid);
 
-            // ADIM 2: Yazma İşlemi (Offline destekli)
             await setDoc(userRef, {
                 ad: ad.trim(),
                 soyad: soyad.trim(),
                 telefon: telefon.trim(),
             }, { merge: true });
 
-            // Context'i güncelle - Güvenli güncelleme
             setUser({
                 ...user,
                 ad: ad.trim(),
@@ -87,424 +101,282 @@ export default function AyarlarScreen() {
             setProfilDuzenleme(false);
         } catch (error: any) {
             console.error('Profil güncelleme hatası:', error.code, error.message);
-
             let msg = error.message || 'Güncelleme yapılamadı';
             if (error.code === 'permission-denied') msg = 'Bu işlem için yetkiniz yok (Yazma izni reddedildi).';
-            if (error.code === 'unavailable') msg = 'Sunucuya ulaşılamıyor (Çevrimdışı).';
-
             toast.error('Hata: ' + msg);
         } finally {
             setProfilKaydediyor(false);
         }
     };
 
-    // Şifre değiştir
-    const sifreDegistir = async () => {
+    // Şifre güncelle
+    const sifreGuncelle = async () => {
+        if (!auth.currentUser) return;
         if (!mevcutSifre || !yeniSifre || !yeniSifreTekrar) {
             toast.warning('Tüm alanları doldurun');
             return;
         }
-
         if (yeniSifre !== yeniSifreTekrar) {
-            toast.warning('Yeni şifreler eşleşmiyor');
+            toast.error('Yeni şifreler eşleşmiyor');
             return;
         }
-
         if (yeniSifre.length < 6) {
-            toast.warning('Şifre en az 6 karakter olmalıdır');
+            toast.warning('Şifre en az 6 karakter olmalı');
             return;
         }
 
         setSifreKaydediyor(true);
         try {
-            const currentUser = auth.currentUser;
-            if (!currentUser || !currentUser.email) throw new Error('Oturum bulunamadı');
+            const credential = EmailAuthProvider.credential(auth.currentUser.email!, mevcutSifre);
+            await reauthenticateWithCredential(auth.currentUser, credential);
+            await updatePassword(auth.currentUser, yeniSifre);
 
-            // Mevcut şifre ile yeniden kimlik doğrula
-            const credential = EmailAuthProvider.credential(currentUser.email, mevcutSifre);
-            await reauthenticateWithCredential(currentUser, credential);
-
-            // Yeni şifreyi ayarla
-            await updatePassword(currentUser, yeniSifre);
-
-            toast.success('Şifreniz başarıyla değiştirildi!');
-
+            toast.success('Şifreniz başarıyla güncellendi');
             setSifreDegistirme(false);
             setMevcutSifre('');
             setYeniSifre('');
             setYeniSifreTekrar('');
         } catch (error: any) {
-            let mesaj = 'Şifre değiştirilemedi.';
+            console.error('Şifre güncelleme hatası:', error);
             if (error.code === 'auth/wrong-password') {
-                mesaj = 'Mevcut şifreniz hatalı.';
-            } else if (error.code === 'auth/weak-password') {
-                mesaj = 'Yeni şifre çok zayıf.';
+                toast.error('Mevcut şifreniz hatalı');
+            } else {
+                toast.error('Şifre güncellenemedi: ' + error.message);
             }
-            toast.error(mesaj);
-        }
-        setSifreKaydediyor(false);
-    };
-
-    // Çıkış yap
-    const cikisYap = async () => {
-        const onay = Platform.OS === 'web'
-            ? confirm('Çıkış yapmak istediğinize emin misiniz?')
-            : await new Promise(resolve => {
-                Alert.alert('Çıkış', 'Çıkış yapmak istediğinize emin misiniz?', [
-                    { text: 'İptal', onPress: () => resolve(false) },
-                    { text: 'Çıkış Yap', onPress: () => resolve(true), style: 'destructive' },
-                ]);
-            });
-
-        if (onay) {
-            await logoutUser();
-            router.replace('/login');
+        } finally {
+            setSifreKaydediyor(false);
         }
     };
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
-            <StatusBar barStyle="light-content" />
+            <CustomHeader title="Ayarlar" />
 
-            {/* Premium Header */}
-            <CustomHeader
-                title="Profil ve Ayarlar"
-                subtitle="Hesabınızı yönetin"
-                showSettings={false}
-                showBackButton={true}
-            />
-
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-                <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-
-                    {/* Profil Kartı */}
-                    <View style={[styles.profileCard, { backgroundColor: colors.card }]}>
-                        <View style={[styles.avatarContainer, { backgroundColor: rolBilgisi.color + '20' }]}>
-                            <Ionicons name={rolBilgisi.icon as any} size={40} color={rolBilgisi.color} />
+            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+                {/* 1. Profil Kartı */}
+                <View style={[styles.card, { backgroundColor: colors.card }]}>
+                    <View style={styles.cardHeader}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                            <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
+                                <Text style={styles.avatarText}>{user?.ad?.charAt(0)}{user?.soyad?.charAt(0)}</Text>
+                            </View>
+                            <View>
+                                <Text style={[styles.cardTitle, { color: colors.text }]}>{user?.ad} {user?.soyad}</Text>
+                                <Text style={[styles.cardSubtitle, { color: colors.textSecondary }]}>{user?.email}</Text>
+                            </View>
                         </View>
+                        {!profilDuzenleme && (
+                            <TouchableOpacity onPress={() => setProfilDuzenleme(true)} style={styles.editButton}>
+                                <Ionicons name="pencil" size={20} color={colors.primary} />
+                            </TouchableOpacity>
+                        )}
+                    </View>
 
-                        {profilDuzenleme ? (
-                            <View style={styles.editForm}>
-                                <View style={styles.inputRow}>
-                                    <View style={{ flex: 1, marginRight: 8 }}>
-                                        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Ad</Text>
-                                        <TextInput
-                                            style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                                            value={ad}
-                                            onChangeText={setAd}
-                                            placeholder="Adınız"
-                                            placeholderTextColor={colors.textMuted}
-                                        />
-                                    </View>
-                                    <View style={{ flex: 1, marginLeft: 8 }}>
-                                        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Soyad</Text>
-                                        <TextInput
-                                            style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                                            value={soyad}
-                                            onChangeText={setSoyad}
-                                            placeholder="Soyadınız"
-                                            placeholderTextColor={colors.textMuted}
-                                        />
-                                    </View>
-                                </View>
-                                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Telefon</Text>
+                    {profilDuzenleme ? (
+                        <View style={styles.formContainer}>
+                            <View style={styles.inputGroup}>
+                                <Text style={[styles.label, { color: colors.textSecondary }]}>Ad</Text>
                                 <TextInput
-                                    style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+                                    style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+                                    value={ad}
+                                    onChangeText={setAd}
+                                    placeholder="Adınız"
+                                    placeholderTextColor={colors.textMuted}
+                                />
+                            </View>
+                            <View style={styles.inputGroup}>
+                                <Text style={[styles.label, { color: colors.textSecondary }]}>Soyad</Text>
+                                <TextInput
+                                    style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+                                    value={soyad}
+                                    onChangeText={setSoyad}
+                                    placeholder="Soyadınız"
+                                    placeholderTextColor={colors.textMuted}
+                                />
+                            </View>
+                            <View style={styles.inputGroup}>
+                                <Text style={[styles.label, { color: colors.textSecondary }]}>Telefon</Text>
+                                <TextInput
+                                    style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                     value={telefon}
                                     onChangeText={setTelefon}
-                                    placeholder="0532 123 4567"
+                                    placeholder="Telefon numaranız"
                                     placeholderTextColor={colors.textMuted}
                                     keyboardType="phone-pad"
                                 />
-                                <View style={styles.editButtons}>
-                                    <TouchableOpacity
-                                        style={[styles.cancelButton, { borderColor: colors.border }]}
-                                        onPress={() => {
-                                            setProfilDuzenleme(false);
-                                            setAd(user?.ad || '');
-                                            setSoyad(user?.soyad || '');
-                                            setTelefon(user?.telefon || '');
-                                        }}
-                                    >
-                                        <Text style={[styles.cancelButtonText, { color: colors.text }]}>İptal</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                        style={[styles.saveButton, { backgroundColor: colors.primary }]}
-                                        onPress={profilKaydet}
-                                        disabled={profilKaydediyor}
-                                    >
-                                        {profilKaydediyor ? (
-                                            <ActivityIndicator color="#fff" size="small" />
-                                        ) : (
-                                            <Text style={styles.saveButtonText}>Kaydet</Text>
-                                        )}
-                                    </TouchableOpacity>
-                                </View>
                             </View>
-                        ) : (
-                            <>
-                                <Text style={[styles.profileName, { color: colors.text }]}>
-                                    {user?.ad} {user?.soyad}
-                                </Text>
-                                <Text style={[styles.profileEmail, { color: colors.textSecondary }]}>{user?.email}</Text>
-                                <View style={[styles.rolBadge, { backgroundColor: rolBilgisi.color + '20' }]}>
-                                    <Text style={[styles.rolText, { color: rolBilgisi.color }]}>{rolBilgisi.label}</Text>
-                                </View>
-                                {user?.telefon && (
-                                    <View style={styles.infoRow}>
-                                        <Ionicons name="call-outline" size={16} color={colors.textSecondary} />
-                                        <Text style={[styles.infoText, { color: colors.textSecondary }]}>{user.telefon}</Text>
-                                    </View>
-                                )}
+                            <View style={styles.actionButtons}>
                                 <TouchableOpacity
-                                    style={[styles.editProfileButton, { borderColor: colors.primary }]}
-                                    onPress={() => setProfilDuzenleme(true)}
+                                    style={[styles.button, { backgroundColor: colors.inputBg }]}
+                                    onPress={() => setProfilDuzenleme(false)}
                                 >
-                                    <Ionicons name="pencil" size={16} color={colors.primary} />
-                                    <Text style={[styles.editProfileText, { color: colors.primary }]}>Profili Düzenle</Text>
+                                    <Text style={{ color: colors.text }}>İptal</Text>
                                 </TouchableOpacity>
-                            </>
-                        )}
-                    </View>
-
-                    {/* Ayarlar Bölümü */}
-                    <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>AYARLAR</Text>
-
-                    <View style={[styles.settingsCard, { backgroundColor: colors.card }]}>
-                        {/* Tema */}
-                        <TouchableOpacity style={styles.settingsItem} onPress={toggleTheme}>
-                            <View style={styles.settingsLeft}>
-                                <View style={[styles.settingsIcon, { backgroundColor: isDark ? '#6366f1' : '#f59e0b' }]}>
-                                    <Ionicons name={isDark ? 'moon' : 'sunny'} size={20} color="#fff" />
-                                </View>
-                                <Text style={[styles.settingsText, { color: colors.text }]}>Karanlık Mod</Text>
-                            </View>
-                            <View style={[styles.toggle, { backgroundColor: isDark ? '#6366f1' : '#e5e7eb' }]}>
-                                <View style={[styles.toggleCircle, { transform: [{ translateX: isDark ? 20 : 0 }] }]} />
-                            </View>
-                        </TouchableOpacity>
-
-                        <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-                        {/* Şifre Değiştir */}
-                        <TouchableOpacity style={styles.settingsItem} onPress={() => setSifreDegistirme(!sifreDegistirme)}>
-                            <View style={styles.settingsLeft}>
-                                <View style={[styles.settingsIcon, { backgroundColor: '#10b981' }]}>
-                                    <Ionicons name="lock-closed" size={20} color="#fff" />
-                                </View>
-                                <Text style={[styles.settingsText, { color: colors.text }]}>Şifre Değiştir</Text>
-                            </View>
-                            <Ionicons name={sifreDegistirme ? 'chevron-up' : 'chevron-forward'} size={20} color={colors.textMuted} />
-                        </TouchableOpacity>
-
-                        {sifreDegistirme && (
-                            <View style={styles.passwordForm}>
-                                <TextInput
-                                    style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                                    placeholder="Mevcut Şifre"
-                                    placeholderTextColor={colors.textMuted}
-                                    value={mevcutSifre}
-                                    onChangeText={setMevcutSifre}
-                                    secureTextEntry
-                                />
-                                <TextInput
-                                    style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                                    placeholder="Yeni Şifre"
-                                    placeholderTextColor={colors.textMuted}
-                                    value={yeniSifre}
-                                    onChangeText={setYeniSifre}
-                                    secureTextEntry
-                                />
-                                <TextInput
-                                    style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                                    placeholder="Yeni Şifre (Tekrar)"
-                                    placeholderTextColor={colors.textMuted}
-                                    value={yeniSifreTekrar}
-                                    onChangeText={setYeniSifreTekrar}
-                                    secureTextEntry
-                                />
                                 <TouchableOpacity
-                                    style={[styles.changePasswordButton, { backgroundColor: '#10b981' }]}
-                                    onPress={sifreDegistir}
-                                    disabled={sifreKaydediyor}
+                                    style={[styles.button, { backgroundColor: colors.primary }]}
+                                    onPress={profilKaydet}
+                                    disabled={profilKaydediyor}
                                 >
-                                    {sifreKaydediyor ? (
-                                        <ActivityIndicator color="#fff" size="small" />
-                                    ) : (
-                                        <Text style={styles.changePasswordText}>Şifreyi Güncelle</Text>
-                                    )}
+                                    {profilKaydediyor ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: 'bold' }}>Kaydet</Text>}
                                 </TouchableOpacity>
-                            </View>
-                        )}
-
-                        <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-                        {/* Bildirimler */}
-                        <View style={styles.settingsItem}>
-                            <View style={styles.settingsLeft}>
-                                <View style={[styles.settingsIcon, { backgroundColor: '#8b5cf6' }]}>
-                                    <Ionicons name="notifications" size={20} color="#fff" />
-                                </View>
-                                <Text style={[styles.settingsText, { color: colors.text }]}>Bildirimler</Text>
-                            </View>
-                            <View style={[styles.toggle, { backgroundColor: '#8b5cf6' }]}>
-                                <View style={[styles.toggleCircle, { transform: [{ translateX: 20 }] }]} />
                             </View>
                         </View>
-                    </View>
+                    ) : (
+                        <View style={styles.badgeContainer}>
+                            <View style={[styles.roleBadge, { backgroundColor: isDark ? '#2a3a2a' : '#e8f5e9' }]}>
+                                <Ionicons name={rolBilgisi.icon as any} size={14} color={isDark ? '#81c784' : '#2e7d32'} />
+                                <Text style={[styles.roleText, { color: isDark ? '#81c784' : '#2e7d32' }]}>{rolBilgisi.label}</Text>
+                            </View>
+                        </View>
+                    )}
+                </View>
 
-                    {/* Çıkış */}
-                    <TouchableOpacity style={[styles.logoutButton, { backgroundColor: '#ef4444' }]} onPress={cikisYap}>
-                        <Ionicons name="log-out-outline" size={22} color="#fff" />
-                        <Text style={styles.logoutText}>Çıkış Yap</Text>
+                {/* 2. Tema Ayarları */}
+                <View style={[styles.section, { backgroundColor: colors.card }]}>
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>🎨 Tema</Text>
+                    <View style={styles.themeGrid}>
+                        {themeOptions.map((option) => (
+                            <TouchableOpacity
+                                key={option.mode}
+                                style={[
+                                    styles.themeOption,
+                                    { borderColor: colors.border },
+                                    themeMode === option.mode && { borderColor: colors.primary, backgroundColor: isDark ? '#1a2a4a' : '#e3f2fd' },
+                                ]}
+                                onPress={() => setThemeMode(option.mode)}
+                            >
+                                <Ionicons
+                                    name={option.icon as any}
+                                    size={24}
+                                    color={themeMode === option.mode ? colors.primary : colors.textSecondary}
+                                />
+                                <Text
+                                    style={[
+                                        styles.themeLabel,
+                                        { color: themeMode === option.mode ? colors.primary : colors.textSecondary },
+                                    ]}
+                                >
+                                    {option.label}
+                                </Text>
+                                {themeMode === option.mode && (
+                                    <Ionicons name="checkmark-circle" size={18} color={colors.primary} style={styles.checkmark} />
+                                )}
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                </View>
+
+                {/* 3. Güvenlik - Şifre Değiştir */}
+                <View style={[styles.card, { backgroundColor: colors.card }]}>
+                    <TouchableOpacity
+                        style={styles.accordionHeader}
+                        onPress={() => setSifreDegistirme(!sifreDegistirme)}
+                    >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                            <View style={[styles.iconBox, { backgroundColor: isDark ? '#333' : '#f5f5f5' }]}>
+                                <Ionicons name="lock-closed" size={20} color={colors.text} />
+                            </View>
+                            <Text style={[styles.cardTitle, { fontSize: 16, color: colors.text }]}>Şifre Değiştir</Text>
+                        </View>
+                        <Ionicons name={sifreDegistirme ? "chevron-up" : "chevron-down"} size={20} color={colors.textSecondary} />
                     </TouchableOpacity>
 
-                    {/* Uygulama Bilgisi */}
-                    <View style={styles.appInfo}>
-                        <Text style={[styles.appName, { color: colors.textMuted }]}>DNA DESTEK</Text>
-                        <Text style={[styles.appVersion, { color: colors.textMuted }]}>Versiyon 1.0.0</Text>
-                    </View>
-                </ScrollView>
-            </KeyboardAvoidingView>
+                    {sifreDegistirme && (
+                        <View style={[styles.formContainer, { marginTop: 15 }]}>
+                            <View style={styles.inputGroup}>
+                                <Text style={[styles.label, { color: colors.textSecondary }]}>Mevcut Şifre</Text>
+                                <TextInput
+                                    style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+                                    value={mevcutSifre}
+                                    onChangeText={setMevcutSifre}
+                                    placeholder="********"
+                                    placeholderTextColor={colors.textMuted}
+                                    secureTextEntry
+                                />
+                            </View>
+                            <View style={styles.inputGroup}>
+                                <Text style={[styles.label, { color: colors.textSecondary }]}>Yeni Şifre</Text>
+                                <TextInput
+                                    style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+                                    value={yeniSifre}
+                                    onChangeText={setYeniSifre}
+                                    placeholder="********"
+                                    placeholderTextColor={colors.textMuted}
+                                    secureTextEntry
+                                />
+                            </View>
+                            <View style={styles.inputGroup}>
+                                <Text style={[styles.label, { color: colors.textSecondary }]}>Yeni Şifre (Tekrar)</Text>
+                                <TextInput
+                                    style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+                                    value={yeniSifreTekrar}
+                                    onChangeText={setYeniSifreTekrar}
+                                    placeholder="********"
+                                    placeholderTextColor={colors.textMuted}
+                                    secureTextEntry
+                                />
+                            </View>
+                            <TouchableOpacity
+                                style={[styles.button, { backgroundColor: colors.primary, marginTop: 10 }]}
+                                onPress={sifreGuncelle}
+                                disabled={sifreKaydediyor}
+                            >
+                                {sifreKaydediyor ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: 'bold' }}>Şifreyi Güncelle</Text>}
+                            </TouchableOpacity>
+                        </View>
+                    )}
+                </View>
+
+                {/* 4. Çıkış Yap */}
+                <TouchableOpacity
+                    style={[styles.logoutButton, { backgroundColor: isDark ? '#2a0000' : '#ffebee', borderColor: '#ffcdd2' }]}
+                    onPress={handleLogout}
+                >
+                    <Ionicons name="log-out-outline" size={24} color="#d32f2f" />
+                    <Text style={styles.logoutText}>Çıkış Yap</Text>
+                </TouchableOpacity>
+
+                <View style={styles.footer}>
+                    <Text style={[styles.versionText, { color: colors.textMuted }]}>
+                        Version {APP_CONFIG.APP_VERSION}
+                    </Text>
+                </View>
+
+                <View style={{ height: 100 }} />
+            </ScrollView>
         </View>
     );
 }
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    // header: ... (removed as it is in CustomHeader)
-    content: { flex: 1, padding: 20 },
-
-    // Profil Kartı
-    profileCard: {
-        borderRadius: 20,
-        padding: 24,
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOpacity: 0.08,
-        shadowRadius: 12,
-        elevation: 3,
-        marginBottom: 24,
-    },
-    avatarContainer: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 16,
-    },
-    profileName: { fontSize: 22, fontWeight: '700', marginBottom: 4 },
-    profileEmail: { fontSize: 14, marginBottom: 12 },
-    rolBadge: { paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20, marginBottom: 12 },
-    rolText: { fontSize: 13, fontWeight: '600' },
-    infoRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
-    infoText: { marginLeft: 8, fontSize: 14 },
-    editProfileButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingVertical: 10,
-        borderRadius: 20,
-        borderWidth: 1.5,
-        marginTop: 16,
-    },
-    editProfileText: { marginLeft: 8, fontSize: 14, fontWeight: '600' },
-
-    // Profil Düzenleme
-    editForm: { width: '100%', marginTop: 16 },
-    inputRow: { flexDirection: 'row' },
-    inputLabel: { fontSize: 12, fontWeight: '500', marginBottom: 6 },
-    input: {
-        borderWidth: 1,
-        borderRadius: 12,
-        padding: 14,
-        fontSize: 15,
-        marginBottom: 12,
-    },
-    editButtons: { flexDirection: 'row', marginTop: 8 },
-    cancelButton: {
-        flex: 1,
-        padding: 14,
-        borderRadius: 12,
-        borderWidth: 1,
-        alignItems: 'center',
-        marginRight: 8,
-    },
-    cancelButtonText: { fontWeight: '600' },
-    saveButton: {
-        flex: 1,
-        padding: 14,
-        borderRadius: 12,
-        alignItems: 'center',
-        marginLeft: 8,
-    },
-    saveButtonText: { color: '#fff', fontWeight: '600' },
-
-    // Ayarlar
-    sectionTitle: { fontSize: 12, fontWeight: '600', marginBottom: 12, marginLeft: 4, letterSpacing: 1 },
-    settingsCard: {
-        borderRadius: 16,
-        overflow: 'hidden',
-        shadowColor: '#000',
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
-        elevation: 2,
-        marginBottom: 24,
-    },
-    settingsItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: 16,
-    },
-    settingsLeft: { flexDirection: 'row', alignItems: 'center' },
-    settingsIcon: {
-        width: 40,
-        height: 40,
-        borderRadius: 12,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 14,
-    },
-    settingsText: { fontSize: 16, fontWeight: '500' },
-    toggle: {
-        width: 48,
-        height: 28,
-        borderRadius: 14,
-        padding: 4,
-    },
-    toggleCircle: {
-        width: 20,
-        height: 20,
-        borderRadius: 10,
-        backgroundColor: '#fff',
-    },
-    divider: { height: 1, marginHorizontal: 16 },
-
-    // Şifre formu
-    passwordForm: { paddingHorizontal: 16, paddingBottom: 16 },
-    changePasswordButton: {
-        padding: 14,
-        borderRadius: 12,
-        alignItems: 'center',
-        marginTop: 4,
-    },
-    changePasswordText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-
-    // Çıkış
-    logoutButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 16,
-        borderRadius: 14,
-        marginBottom: 24,
-    },
-    logoutText: { color: '#fff', fontSize: 16, fontWeight: '600', marginLeft: 10 },
-
-    // Uygulama bilgisi
-    appInfo: { alignItems: 'center', paddingBottom: 40 },
-    appName: { fontSize: 14, fontWeight: '600' },
-    appVersion: { fontSize: 12, marginTop: 4 },
+    content: { padding: 20 },
+    card: { borderRadius: 16, padding: 16, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+    section: { borderRadius: 16, padding: 16, marginBottom: 16 },
+    sectionTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 12 },
+    cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+    avatar: { width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center' },
+    avatarText: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
+    cardTitle: { fontSize: 18, fontWeight: 'bold' },
+    cardSubtitle: { fontSize: 14, marginTop: 2 },
+    badgeContainer: { flexDirection: 'row', marginTop: 12 },
+    roleBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, gap: 4 },
+    roleText: { fontSize: 12, fontWeight: '600' },
+    editButton: { padding: 8 },
+    formContainer: { marginTop: 16 },
+    inputGroup: { marginBottom: 12 },
+    label: { fontSize: 13, marginBottom: 6, fontWeight: '500' },
+    input: { borderWidth: 1, borderRadius: 12, padding: 12, fontSize: 15 },
+    actionButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 10 },
+    button: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+    accordionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    iconBox: { width: 32, height: 32, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+    themeGrid: { flexDirection: 'row', gap: 10 },
+    themeOption: { flex: 1, borderWidth: 1, borderRadius: 12, padding: 12, alignItems: 'center', justifyContent: 'center', position: 'relative' },
+    themeLabel: { fontSize: 12, marginTop: 8, fontWeight: '500' },
+    checkmark: { position: 'absolute', top: 6, right: 6 },
+    logoutButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, borderRadius: 16, borderWidth: 1, gap: 10, marginTop: 10 },
+    logoutText: { color: '#d32f2f', fontSize: 16, fontWeight: 'bold' },
+    footer: { alignItems: 'center', marginTop: 20 },
+    versionText: { fontSize: 12 },
 });

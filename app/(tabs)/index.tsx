@@ -1,6 +1,6 @@
 import React from 'react';
 import { StatusBar, StyleSheet, View } from 'react-native';
-import { ListSkeleton } from '../../components/Skeleton';
+import { HeroSkeleton } from '../../components/Skeleton';
 import AdminHero from '../../components/Welcome/AdminHero';
 import CustomerHero from '../../components/Welcome/CustomerHero';
 import TechnicianHero from '../../components/Welcome/TechnicianHero';
@@ -13,8 +13,8 @@ export default function WelcomeScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center' }]}>
-        <ListSkeleton count={1} />
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <HeroSkeleton />
       </View>
     );
   }

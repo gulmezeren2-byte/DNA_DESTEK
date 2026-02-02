@@ -3,11 +3,10 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { arrayUnion, collection, doc, Firestore, getDoc, onSnapshot, orderBy, query, Timestamp, updateDoc, where } from 'firebase/firestore';
+import { arrayUnion, collection, doc, Firestore, getDoc, limit, onSnapshot, orderBy, query, Timestamp, updateDoc, where } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
-    Image,
     Modal,
     RefreshControl,
     ScrollView,
@@ -19,52 +18,33 @@ import {
     View
 } from 'react-native';
 import Logo from '../../components/Logo';
+import OptimizedImage from '../../components/OptimizedImage';
 import { ListSkeleton } from '../../components/Skeleton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { db as dbAny } from '../../firebaseConfig';
 import { getAllEkipler } from '../../services/ekipService';
 import { sendPushNotification } from '../../services/notificationService';
-import { uploadImage } from '../../services/storageService';
 import toast from '../../services/toastService';
+import { Talep } from '../../types';
 const db = dbAny as Firestore;
 
-interface Talep {
-    id: string;
-    baslik: string;
-    aciklama: string;
-    kategori: string;
-    durum: string;
-    oncelik: string;
-    projeAdi: string;
-    blokAdi?: string;
-    daireNo?: string;
-    musteriAdi: string;
-    musteriTelefon: string;
-    musteriId?: string;
-    olusturmaTarihi: { seconds: number };
-    atananTeknisyenId?: string;
-    atananTeknisyenAdi?: string;
-    atananEkipId?: string;
-    atananEkipAdi?: string;
-    yorumlar?: { yazanAdi: string; mesaj: string; tarih: any }[];
-    fotograflar?: string[];
-    cozumFotograflari?: string[];
-}
-
-const durumConfig: Record<string, { bg: string; bgDark: string; text: string; textDark: string; icon: string; label: string }> = {
-    yeni: { bg: '#e3f2fd', bgDark: '#1a3a5c', text: '#1565c0', textDark: '#64b5f6', icon: 'hourglass-outline', label: 'Yeni' },
-    atandi: { bg: '#fff3e0', bgDark: '#3a2a1a', text: '#ef6c00', textDark: '#ffb74d', icon: 'person-outline', label: 'Atandı' },
-    islemde: { bg: '#e8f5e9', bgDark: '#1a3a1a', text: '#2e7d32', textDark: '#81c784', icon: 'construct-outline', label: 'İşlemde' },
-    beklemede: { bg: '#fce4ec', bgDark: '#3a1a2a', text: '#c2185b', textDark: '#f48fb1', icon: 'pause-circle-outline', label: 'Beklemede' },
-    cozuldu: { bg: '#e0f2f1', bgDark: '#1a3a3a', text: '#00796b', textDark: '#4db6ac', icon: 'checkmark-circle', label: 'Çözüldü' },
-};
+// const durumConfig removed - using global DURUM_CONFIG
 
 const durumSecenekleri = [
     { value: 'islemde', label: 'İşleme Al', icon: 'construct-outline', color: '#2e7d32' },
     { value: 'beklemede', label: 'Beklet', icon: 'pause-circle-outline', color: '#c2185b' },
     { value: 'cozuldu', label: 'Çözüldü', icon: 'checkmark-circle', color: '#00796b' },
 ];
+
+const durumConfig: Record<string, { label: string; text: string; bg: string; textDark: string; bgDark: string; icon: string }> = {
+    yeni: { label: 'Yeni', text: '#2196f3', bg: '#e3f2fd', textDark: '#64b5f6', bgDark: '#1a3a5c', icon: 'flash' },
+    atanmis: { label: 'Atandı', text: '#ff9800', bg: '#fff3e0', textDark: '#ffb74d', bgDark: '#3e2723', icon: 'people' },
+    islemde: { label: 'İşlemde', text: '#9c27b0', bg: '#f3e5f5', textDark: '#ba68c8', bgDark: '#4a148c', icon: 'construct' },
+    beklemede: { label: 'Beklemede', text: '#f44336', bg: '#ffebee', textDark: '#ef5350', bgDark: '#b71c1c', icon: 'time' },
+    cozuldu: { label: 'Çözüldü', text: '#4caf50', bg: '#e8f5e9', textDark: '#81c784', bgDark: '#1b5e20', icon: 'checkmark-circle' },
+    kapatildi: { label: 'Kapatıldı', text: '#607d8b', bg: '#eceff1', textDark: '#90a4ae', bgDark: '#263238', icon: 'close-circle' },
+};
 
 export default function TeknisyenScreen() {
     const { user } = useAuth();
@@ -102,10 +82,14 @@ export default function TeknisyenScreen() {
         if (!result.canceled) {
             const manipResult = await ImageManipulator.manipulateAsync(
                 result.assets[0].uri,
-                [{ resize: { width: 800 } }],
-                { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+                [{ resize: { width: 600 } }],
+                { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true }
             );
-            setCozumFotograflari([...cozumFotograflari, manipResult.uri]);
+
+            if (manipResult.base64) {
+                const base64Uri = `data:image/jpeg;base64,${manipResult.base64}`;
+                setCozumFotograflari([...cozumFotograflari, base64Uri]);
+            }
         }
     };
 
@@ -121,39 +105,31 @@ export default function TeknisyenScreen() {
         setIslemYukleniyor(true);
         setYukleniyorFoto(true);
         try {
-            const yuklenenFotoUrls: string[] = [];
-
-            // Fotoğrafları Firebase Storage'a yükle
-            for (let i = 0; i < cozumFotograflari.length; i++) {
-                const uri = cozumFotograflari[i];
-                const filename = `cozum_${seciliTalep.id}_${Date.now()}_${i}.jpg`;
-                const path = `cozumler/${seciliTalep.id}/${filename}`;
-
-                const result = await uploadImage(uri!, path);
-                if (result.success) {
-                    yuklenenFotoUrls.push(result.downloadURL!);
-                } else {
-                    toast.error('Bazı fotoğraflar yüklenemedi');
-                }
-            }
+            // Fotoğraflar zaten Base64 olarak state'te
+            const cozumFotos = cozumFotograflari;
 
             await updateDoc(doc(db as Firestore, 'talepler', seciliTalep.id), {
                 durum: 'cozuldu',
                 cozumTarihi: Timestamp.now(),
-                cozumFotograflari: yuklenenFotoUrls
+                cozumFotograflari: cozumFotos
             });
 
-            // Bildirim Gönder
-            if (seciliTalep.musteriId) {
-                const musteriDoc = await getDoc(doc(db as Firestore, 'users', seciliTalep.musteriId));
+            // Bildirim Gönder. Type check for musteriId since it's now olusturanId in new type but still musteriId in old data
+            // We should use olusturanId if available, fallback to musteriId
+            // But Talep type has only olusturanId.
+            // Wait, I updated Talep type to have musteriAdi?, yes. But I should check if I need to update code to use olusturanId.
+
+            const targetUserId = seciliTalep.olusturanId || (seciliTalep as any).musteriId;
+            if (targetUserId) {
+                const musteriDoc = await getDoc(doc(db as Firestore, 'users', targetUserId));
                 if (musteriDoc.exists()) {
                     const musteriData = musteriDoc.data();
                     if (musteriData?.pushToken) {
-                        const fotoMesaj = yuklenenFotoUrls.length > 0 ? ' 📸 (Fotoğraflı Çözüm)' : '';
+                        const fotoMesaj = cozumFotos.length > 0 ? ' 📸 (Fotoğraflı Çözüm)' : '';
                         await sendPushNotification(
                             musteriData.pushToken,
                             'Talep Çözüldü ✅',
-                            `Sayın ${seciliTalep.musteriAdi}, talebiniz çözüldü olarak işaretlendi.${fotoMesaj}`
+                            `Sayın ${seciliTalep.musteriAdi || seciliTalep.olusturanAd}, talebiniz çözüldü olarak işaretlendi.${fotoMesaj}`
                         );
                     }
                 }
@@ -171,58 +147,114 @@ export default function TeknisyenScreen() {
         }
     };
 
-    // Realtime Data Loading
+    // Realtime Data Loading (Split Strategy)
     useEffect(() => {
-        let unsubscribe: (() => void) | undefined;
+        const unsubscribes: (() => void)[] = [];
 
         const initRealtime = async () => {
             if (!user) return;
+            setYukleniyor(true);
 
             try {
-                // 1. Kullanıcının ekiplerini bul
+                // 1. Get User's Teams
                 const ekipResult = await getAllEkipler();
-                let kullaniciEkipIds: string[] = [];
-
-                if (ekipResult.success && ekipResult.ekipler) {
-                    kullaniciEkipIds = ekipResult.ekipler
-                        .filter((ekip: any) => ekip.uyeler?.includes(user.uid) && ekip.aktif)
-                        .map((ekip: any) => ekip.id);
+                if (!ekipResult.success || !ekipResult.data) {
+                    setYukleniyor(false);
+                    return;
                 }
 
-                if (kullaniciEkipIds.length === 0) {
+                const myTeamIds = ekipResult.data
+                    .filter(e => e.aktif && user.uid && e.uyeler.includes(user.uid))
+                    .map(e => e.id);
+
+                if (myTeamIds.length === 0) {
                     setTalepler([]);
                     setYukleniyor(false);
                     return;
                 }
 
-                // 2. Bu ekiplere atanmış talepleri dinle (Max 10 ekip support)
-                // Eğer ekip sayısı 10'dan fazlaysa chunk'lara bölmek gerekir ama şimdilik basit tutuyoruz.
-                const talesRef = collection(db as Firestore, 'talepler');
-                const q = query(
-                    talesRef,
-                    where('atananEkipId', 'in', kullaniciEkipIds.slice(0, 10)),
-                    orderBy('olusturmaTarihi', 'desc')
-                );
+                // 2. STRATEGY: Active Tasks (Guaranteed delivery)
+                // We create a listener for EACH team for active statuses.
+                // This overcomes the limit of combining 'in' operators.
+                const activeStatus = ['yeni', 'atanmis', 'islemde', 'beklemede'];
+                // Temporary storage for merge
+                const activeMap = new Map<string, Talep>();
+                const completedMap = new Map<string, Talep>();
 
-                unsubscribe = onSnapshot(q, (snapshot) => {
-                    const fetchedTalepler = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as Talep[];
+                const updateState = () => {
+                    const activeList = Array.from(activeMap.values());
+                    const completedList = Array.from(completedMap.values());
 
-                    // Client-side sort (Acil en üste)
-                    fetchedTalepler.sort((a, b) => {
+                    // Client-side sort: Acil top, then date
+                    const sortFn = (a: Talep, b: Talep) => {
                         if (a.oncelik === 'acil' && b.oncelik !== 'acil') return -1;
                         if (b.oncelik === 'acil' && a.oncelik !== 'acil') return 1;
-                        // Tarih sıralaması zaten query'den geliyor
-                        const dateA = a.olusturmaTarihi?.seconds || 0;
-                        const dateB = b.olusturmaTarihi?.seconds || 0;
-                        return dateB - dateA;
-                    });
+                        const da = (a.olusturmaTarihi as any)?.seconds || 0;
+                        const db = (b.olusturmaTarihi as any)?.seconds || 0;
+                        return db - da;
+                    };
 
-                    setTalepler(fetchedTalepler);
-                    setYukleniyor(false);
-                }, (error) => {
-                    console.error("Realtime error:", error);
-                    setYukleniyor(false);
-                });
+                    setTalepler([...activeList.sort(sortFn), ...completedList.sort(sortFn)]);
+                };
+
+                // A. Active Listeners (Per Team)
+                for (const teamId of myTeamIds) {
+                    const qActive = query(
+                        collection(db as Firestore, 'talepler'),
+                        where('atananEkipId', '==', teamId),
+                        where('durum', 'in', activeStatus)
+                    );
+
+                    const unsub = onSnapshot(qActive, (snap) => {
+                        snap.docChanges().forEach(change => {
+                            const talep = { id: change.doc.id, ...change.doc.data() } as Talep;
+                            if (change.type === 'removed') {
+                                activeMap.delete(talep.id);
+                            } else {
+                                activeMap.set(talep.id, talep);
+                            }
+                        });
+                        updateState();
+                    });
+                    unsubscribes.push(unsub);
+                }
+
+                // B. Completed/Recent Listener (Global for my teams)
+                // Since we can't do 'teamId IN [...]' AND 'durum IN [...]',
+                // We will fetch only 'cozuldu' ones or just the recently updated ones regardless of status,
+                // and filter purely for the "Completed" section.
+                // Simplified: Just fetch recent 20 'cozuldu' tasks for these teams.
+
+                // Note: Firestore limits 'in' to 10 values.
+                const chunks = [];
+                for (let i = 0; i < myTeamIds.length; i += 10) {
+                    chunks.push(myTeamIds.slice(i, i + 10));
+                }
+
+                for (const chunk of chunks) {
+                    const qCompleted = query(
+                        collection(db as Firestore, 'talepler'),
+                        where('atananEkipId', 'in', chunk),
+                        where('durum', '==', 'cozuldu'),
+                        orderBy('cozumTarihi', 'desc'),
+                        limit(20)
+                    );
+
+                    const unsub = onSnapshot(qCompleted, (snap) => {
+                        snap.docChanges().forEach(change => {
+                            const talep = { id: change.doc.id, ...change.doc.data() } as Talep;
+                            if (change.type === 'removed') {
+                                completedMap.delete(talep.id);
+                            } else {
+                                completedMap.set(talep.id, talep);
+                            }
+                        });
+                        updateState();
+                    });
+                    unsubscribes.push(unsub);
+                }
+
+                setYukleniyor(false);
 
             } catch (error) {
                 console.error("Setup error:", error);
@@ -235,7 +267,7 @@ export default function TeknisyenScreen() {
         }
 
         return () => {
-            if (unsubscribe) unsubscribe();
+            unsubscribes.forEach(u => u());
         };
     }, [user]);
 
@@ -246,9 +278,16 @@ export default function TeknisyenScreen() {
         setTimeout(() => setRefreshing(false), 1000);
     }, []);
 
-    const formatTarih = (timestamp: { seconds: number }) => {
-        if (!timestamp?.seconds) return '-';
-        const date = new Date(timestamp.seconds * 1000);
+    const formatTarih = (timestamp: any) => {
+        if (!timestamp) return '-';
+        let date;
+        if (timestamp.toDate) {
+            date = timestamp.toDate();
+        } else if (timestamp.seconds) {
+            date = new Date(timestamp.seconds * 1000);
+        } else {
+            date = new Date(timestamp);
+        }
         return date.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
     };
 
@@ -272,9 +311,10 @@ export default function TeknisyenScreen() {
             await updateDoc(doc(db as Firestore, 'talepler', seciliTalep.id), updateData);
 
             // Bildirim Gönder
-            if (seciliTalep.musteriId) {
+            const targetUserId = seciliTalep.olusturanId || (seciliTalep as any).musteriId;
+            if (targetUserId) {
                 try {
-                    const musteriDoc = await getDoc(doc(db as Firestore, 'users', seciliTalep.musteriId));
+                    const musteriDoc = await getDoc(doc(db as Firestore, 'users', targetUserId));
                     if (musteriDoc.exists()) {
                         const musteriData = musteriDoc.data();
                         if (musteriData?.pushToken) {
@@ -605,7 +645,7 @@ export default function TeknisyenScreen() {
                                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.detayFotoScroll}>
                                             {seciliTalep.fotograflar.map((foto, index) => (
                                                 <TouchableOpacity key={index} onPress={() => setTamEkranFoto(foto)}>
-                                                    <Image source={{ uri: foto }} style={styles.detayFoto} />
+                                                    <OptimizedImage source={{ uri: foto }} style={styles.detayFoto} />
                                                 </TouchableOpacity>
                                             ))}
                                         </ScrollView>
@@ -732,7 +772,7 @@ export default function TeknisyenScreen() {
                         <View style={styles.cozumFotoContainer}>
                             {cozumFotograflari.map((foto, index) => (
                                 <View key={index} style={styles.cozumFotoWrapper}>
-                                    <Image source={{ uri: foto }} style={styles.cozumFotoThumb} />
+                                    <OptimizedImage source={{ uri: foto }} style={styles.cozumFotoThumb} />
                                     <TouchableOpacity
                                         style={styles.cozumFotoSil}
                                         onPress={() => setCozumFotograflari(prev => prev.filter((_, i) => i !== index))}
@@ -790,7 +830,7 @@ export default function TeknisyenScreen() {
                         <Ionicons name="close" size={30} color="#fff" />
                     </TouchableOpacity>
                     {tamEkranFoto && (
-                        <Image source={{ uri: tamEkranFoto }} style={styles.fullScreenImage} resizeMode="contain" />
+                        <OptimizedImage source={{ uri: tamEkranFoto }} style={styles.fullScreenImage} contentFit="contain" />
                     )}
                 </View>
             </Modal>

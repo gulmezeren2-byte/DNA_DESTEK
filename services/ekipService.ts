@@ -6,25 +6,28 @@ import {
     deleteDoc,
     doc,
     getDocs,
-    updateDoc
+    query,
+    updateDoc,
+    where
 } from "firebase/firestore";
 import { db } from "../firebaseConfig";
+import { Ekip, Proje, ServiceResponse } from "../types";
 
-export const getProjeler = async () => {
+export const getProjeler = async (): Promise<ServiceResponse<Proje[]>> => {
     try {
         const snap = await getDocs(collection(db, "projeler"));
-        const projeler = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        return { success: true, projeler };
+        const projeler = snap.docs.map(d => ({ id: d.id, ...d.data() } as Proje));
+        return { success: true, data: projeler }; // Changed to data
     } catch (e: any) {
         return { success: false, message: e.message };
     }
 };
 
-export const getAllEkipler = async () => {
+export const getAllEkipler = async (): Promise<ServiceResponse<Ekip[]>> => {
     try {
         const snap = await getDocs(collection(db, "ekipler"));
-        const ekipler = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        return { success: true, ekipler };
+        const ekipler = snap.docs.map(d => ({ id: d.id, ...d.data() } as Ekip));
+        return { success: true, data: ekipler }; // Changed to data
     } catch (e: any) {
         return { success: false, message: e.message };
     }
@@ -32,7 +35,7 @@ export const getAllEkipler = async () => {
 
 export const getActiveEkipler = getAllEkipler;
 
-export const assignTalepToEkip = async (talepId: string, ekipId: string, ekipAdi: string) => {
+export const assignTalepToEkip = async (talepId: string, ekipId: string, ekipAdi: string): Promise<ServiceResponse<void>> => {
     try {
         const talepRef = doc(db, "talepler", talepId);
         await updateDoc(talepRef, {
@@ -47,7 +50,7 @@ export const assignTalepToEkip = async (talepId: string, ekipId: string, ekipAdi
     }
 };
 
-export const saveEkip = async (ekipData: any) => {
+export const saveEkip = async (ekipData: Partial<Ekip>): Promise<ServiceResponse<void>> => {
     try {
         if (ekipData.id) {
             await updateDoc(doc(db, "ekipler", ekipData.id), ekipData);
@@ -61,22 +64,22 @@ export const saveEkip = async (ekipData: any) => {
     }
 };
 
-export const createEkip = async (ekipData: any) => {
+export const createEkip = async (ekipData: Omit<Ekip, 'id' | 'olusturmaTarihi' | 'uyeler' | 'aktif'>): Promise<ServiceResponse<{ id: string }>> => {
     try {
         const docRef = await addDoc(collection(db, "ekipler"), {
             ...ekipData,
-            uyeler: ekipData.uyeler || [],
+            uyeler: [],
             aktif: true,
             olusturmaTarihi: new Date()
         });
-        return { success: true, id: docRef.id };
+        return { success: true, data: { id: docRef.id } };
     } catch (error: any) {
         console.error("Ekip oluşturma hatası:", error);
         return { success: false, message: error.message };
     }
 };
 
-export const updateEkip = async (ekipId: string, data: any) => {
+export const updateEkip = async (ekipId: string, data: Partial<Ekip>): Promise<ServiceResponse<void>> => {
     try {
         await updateDoc(doc(db, "ekipler", ekipId), data);
         return { success: true };
@@ -86,8 +89,29 @@ export const updateEkip = async (ekipId: string, data: any) => {
     }
 };
 
-export const deleteEkip = async (ekipId: string) => {
+// Helper to check for active tasks
+const checkActiveTasksForTeam = async (ekipId: string): Promise<boolean> => {
+    const q = query(
+        collection(db, "talepler"),
+        where("atananEkipId", "==", ekipId),
+        where("durum", "in", ["yeni", "islemde", "atanmis", "beklemede"]) // Active statuses
+    );
+    const snapshot = await getDocs(q);
+    return !snapshot.empty;
+};
+
+export const deleteEkip = async (ekipId: string): Promise<ServiceResponse<void>> => {
     try {
+        // 1. Check Integrity
+        const hasActiveTasks = await checkActiveTasksForTeam(ekipId);
+        if (hasActiveTasks) {
+            return {
+                success: false,
+                message: "Bu ekibe atanmış aktif talepler var! Önce talepleri başka ekibe atayın veya kapatın."
+            };
+        }
+
+        // 2. Safe to delete
         await deleteDoc(doc(db, "ekipler", ekipId));
         return { success: true };
     } catch (error: any) {
@@ -96,7 +120,7 @@ export const deleteEkip = async (ekipId: string) => {
     }
 };
 
-export const addUserToEkip = async (ekipId: string, userId: string) => {
+export const addUserToEkip = async (ekipId: string, userId: string): Promise<ServiceResponse<void>> => {
     try {
         await updateDoc(doc(db, "ekipler", ekipId), {
             uyeler: arrayUnion(userId)
@@ -108,7 +132,7 @@ export const addUserToEkip = async (ekipId: string, userId: string) => {
     }
 };
 
-export const removeUserFromEkip = async (ekipId: string, userId: string) => {
+export const removeUserToEkip = async (ekipId: string, userId: string): Promise<ServiceResponse<void>> => {
     try {
         await updateDoc(doc(db, "ekipler", ekipId), {
             uyeler: arrayRemove(userId)
@@ -120,7 +144,11 @@ export const removeUserFromEkip = async (ekipId: string, userId: string) => {
     }
 };
 
-export const createDefaultEkipler = async () => {
+// Also export as removeUserFromEkip to match original export if needed, or update consumers
+export const removeUserFromEkip = removeUserToEkip;
+
+
+export const createDefaultEkipler = async (): Promise<ServiceResponse<void>> => {
     try {
         const defaultEkipler = [
             { ad: 'Elektrik Ekibi', renk: '#3b82f6', uyeler: [], aktif: true },

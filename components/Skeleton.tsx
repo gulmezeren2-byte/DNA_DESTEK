@@ -244,7 +244,47 @@ export const ReportSkeleton: React.FC = () => {
     );
 };
 
+/**
+ * Hero Screen Skeleton
+ */
+export const HeroSkeleton: React.FC = () => {
+    return (
+        <View style={styles.heroContainer}>
+            {/* Header */}
+            <View style={styles.heroHeader}>
+                <Skeleton width={120} height={40} />
+                <Skeleton width={80} height={28} borderRadius={14} />
+            </View>
+
+            {/* Greeting */}
+            <View style={{ marginBottom: 40 }}>
+                <Skeleton width={150} height={24} style={{ marginBottom: 10 }} />
+                <Skeleton width={250} height={36} />
+            </View>
+
+            {/* Content Card / Status */}
+            <Skeleton width="100%" height={140} borderRadius={20} style={{ marginBottom: 40 }} />
+
+            {/* CTA Button */}
+            <Skeleton width="100%" height={64} borderRadius={16} />
+        </View>
+    );
+};
+
 const styles = StyleSheet.create({
+    // Hero
+    heroContainer: {
+        flex: 1,
+        paddingTop: 60,
+        paddingHorizontal: 30,
+    },
+    heroHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 50,
+    },
+
     // Container
     container: {
         flex: 1,

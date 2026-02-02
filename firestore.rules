@@ -6,22 +6,49 @@ service cloud.firestore {
     function isSignedIn() {
       return request.auth != null;
     }
+    
+    function isAdminEmail() {
+      // Hardcoded Admin Whitelist - Server Side Source of Truth
+      return request.auth.token.email in ['admin@dnadestek.com', 'eren.gulmez@dnadestek.com'];
+    }
+
     function isAdmin() {
       return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.rol == 'yonetim';
     }
+    
     function isTechnician() {
       return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.rol == 'teknisyen';
     }
+    
     function isOwner(userId) {
       return request.auth.uid == userId;
     }
 
     // Users Collection
     match /users/{userId} {
-      allow read: if isSignedIn(); // Users can read profiles (needed for technician names)
-      allow create: if isAdmin(); // Only admins can create new users
-      allow update: if isAdmin() || isOwner(userId); // Admins or self can update
-      allow delete: if isAdmin(); // Only admins can delete
+      // Read: Owner can see own profile. Admin/Tech can see all (for management/assignment).
+      allow get: if isSignedIn() && (isOwner(userId) || isAdmin() || isTechnician());
+      allow list: if isAdmin() || isTechnician();
+      
+      // Create: Owner can create own profile.
+      // Must validate Role: 
+      // - Standard users can ONLY set 'musteri'.
+      // - Whitelisted emails can set 'yonetim'.
+      // - Nobody can self-assign 'teknisyen'.
+      allow create: if isSignedIn() && isOwner(userId) && (
+        request.resource.data.rol == 'musteri' || 
+        (request.resource.data.rol == 'yonetim' && isAdminEmail())
+      );
+      
+      // Update: Admin can update anyone. Owner can update self.
+      // If Owner updates, they CANNOT escalate privileges.
+      allow update: if isAdmin() || (isOwner(userId) && (
+        request.resource.data.rol == 'musteri' || 
+        (request.resource.data.rol == 'yonetim' && isAdminEmail()) ||
+        request.resource.data.rol == resource.data.rol // Allow update if role doesn't change
+      ));
+      
+      allow delete: if isAdmin();
     }
 
     // Talepler Collection
@@ -29,7 +56,8 @@ service cloud.firestore {
       allow read: if isSignedIn() && (
         isAdmin() || 
         isTechnician() || 
-        resource.data.olusturanId == request.auth.uid
+        resource.data.olusturanId == request.auth.uid ||
+        resource.data.musteriId == request.auth.uid
       );
       allow create: if isSignedIn(); // Anyone signed in can create a request
       allow update: if isSignedIn() && (

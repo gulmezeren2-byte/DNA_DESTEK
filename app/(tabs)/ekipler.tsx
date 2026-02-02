@@ -27,14 +27,7 @@ import {
     updateEkip,
 } from '../../services/ekipService';
 import toast from '../../services/toastService';
-
-interface Ekip {
-    id: string;
-    ad: string;
-    renk: string;
-    uyeler: string[];
-    aktif: boolean;
-}
+import { Ekip } from '../../types';
 
 interface Kullanici {
     id: string;
@@ -84,13 +77,13 @@ export default function EkiplerScreen() {
             getAllUsers(),
         ]);
 
-        if (ekipResult.success && ekipResult.ekipler) {
-            setEkipler((ekipResult.ekipler as any[]).filter((e: any) => e.aktif));
+        if (ekipResult.success && ekipResult.data) {
+            setEkipler(ekipResult.data.filter(e => e.aktif));
         }
 
         // Fix: Handle getAllUsers object response
-        if (kullaniciResult.success && Array.isArray(kullaniciResult.users)) {
-            const users = kullaniciResult.users as Kullanici[];
+        if (kullaniciResult.success && Array.isArray(kullaniciResult.data)) {
+            const users = kullaniciResult.data as Kullanici[];
             setKullanicilar(users.filter((u: any) => (u.rol === 'teknisyen' || u.role === 'teknisyen') && u.aktif));
         }
         setYukleniyor(false);
@@ -164,7 +157,8 @@ export default function EkiplerScreen() {
         if (!seciliEkip) return;
 
         setIslemYukleniyor(true);
-        const result = await addUserToEkip(kullaniciId, seciliEkip.id);
+        // Arguman sirasi: ekipId, userId
+        const result = await addUserToEkip(seciliEkip.id, kullaniciId);
 
         if (result.success) {
             toast.success('Üye eklendi!');
@@ -185,7 +179,8 @@ export default function EkiplerScreen() {
         if (!seciliEkip) return;
 
         setIslemYukleniyor(true);
-        const result = await removeUserFromEkip(kullaniciId, seciliEkip.id);
+        // Arguman sirasi: ekipId, userId
+        const result = await removeUserFromEkip(seciliEkip.id, kullaniciId);
 
         if (result.success) {
             toast.success('Üye çıkarıldı!');

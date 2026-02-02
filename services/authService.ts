@@ -2,8 +2,8 @@ import {
     initializeApp
 } from "firebase/app";
 import {
-    User as FirebaseUser,
     createUserWithEmailAndPassword,
+    User as FirebaseUser,
     getAuth,
     onAuthStateChanged,
     signInWithEmailAndPassword,
@@ -12,6 +12,7 @@ import {
 import {
     collection,
     doc,
+    DocumentSnapshot,
     getDoc,
     getDocFromServer,
     getDocs,
@@ -21,6 +22,7 @@ import {
 } from "firebase/firestore";
 import { APP_CONFIG } from "../constants";
 import { auth, db } from "../firebaseConfig";
+import { DNAUser, ServiceResponse, UserRole } from "../types";
 
 // Re-create config for secondary app usage (createUser) AND REST API access
 const firebaseConfig = {
@@ -32,7 +34,7 @@ const firebaseConfig = {
     appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
-const normalizeRole = (role: string) => {
+const normalizeRole = (role: string | undefined): UserRole => {
     if (!role) return 'musteri';
     const r = role.toLowerCase().trim();
     if (r === 'yonetici' || r === 'admin' || r === 'yonetim' || r === 'manager') return 'yonetim';
@@ -41,7 +43,7 @@ const normalizeRole = (role: string) => {
 };
 
 // Helper: Try to get doc from server, fallback to cache
-const getUserDocSafe = async (uid: string) => {
+const getUserDocSafe = async (uid: string): Promise<DocumentSnapshot> => {
     try {
         // First try server to get latest role/data
         return await getDocFromServer(doc(db, "users", uid));
@@ -52,7 +54,7 @@ const getUserDocSafe = async (uid: string) => {
 };
 
 // --- REST API FALLBACK UTILITIES ---
-const writeUserToFirestoreViaRest = async (userDocData: any, token: string) => {
+const writeUserToFirestoreViaRest = async (userDocData: any, token: string): Promise<boolean> => {
     const projectId = firebaseConfig.projectId;
     if (!projectId) {
         console.error("Missing Project ID in config, cannot use REST API.");
@@ -102,7 +104,7 @@ const writeUserToFirestoreViaRest = async (userDocData: any, token: string) => {
 };
 
 // AUTO-PROVISIONING FOR MISSING ADMINS (Recovery Feature)
-const checkAndRestoreAdminProfile = async (user: FirebaseUser) => {
+const checkAndRestoreAdminProfile = async (user: FirebaseUser): Promise<any | null> => {
     if (!user.email) return null;
 
     if (APP_CONFIG.ADMIN_EMAILS.includes(user.email)) {
@@ -113,7 +115,7 @@ const checkAndRestoreAdminProfile = async (user: FirebaseUser) => {
         if (!userDoc.exists()) {
             console.warn("⚠️ Admin Whitelisted User found WITHOUT Firestore Profile! Attempting auto-restore...");
 
-            const adminData = {
+            const adminData: Partial<DNAUser> = {
                 id: user.uid,
                 ad: "Admin",
                 soyad: "User",
@@ -150,7 +152,7 @@ const checkAndRestoreAdminProfile = async (user: FirebaseUser) => {
     return null;
 };
 
-export const onAuthChange = (callback: (user: any) => void) => {
+export const onAuthChange = (callback: (user: DNAUser | null) => void) => {
     return onAuthStateChanged(auth, async (user: FirebaseUser | null) => {
         if (user) {
             if (!user.email) return;
@@ -164,7 +166,7 @@ export const onAuthChange = (callback: (user: any) => void) => {
             // 5 saniye bekle (Sunucu yanıt vermezse)
             const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 5000));
 
-            let firestoreData = {};
+            let firestoreData: any = {};
             try {
                 const result: any = await Promise.race([userDocPromise, timeoutPromise]);
                 if (result && result.exists()) {
@@ -189,7 +191,7 @@ export const onAuthChange = (callback: (user: any) => void) => {
                 userData.rol = 'yonetim';
             }
 
-            callback(userData);
+            callback(userData as DNAUser);
 
         } else {
             callback(null);
@@ -197,7 +199,7 @@ export const onAuthChange = (callback: (user: any) => void) => {
     });
 };
 
-export const loginUser = async (email: string, password: string) => {
+export const loginUser = async (email: string, password: string): Promise<ServiceResponse<{ user: DNAUser }>> => {
     try {
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
@@ -207,13 +209,36 @@ export const loginUser = async (email: string, password: string) => {
         await checkAndRestoreAdminProfile(user);
         // ------------------------------------------------
 
+        if (!user.email) {
+            return { success: false, message: "E-posta adresi bulunamadı." };
+        }
+
         // Force server read on login to get fresh role
         const userDoc = await getUserDocSafe(user.uid);
 
         if (userDoc.exists()) {
             const data = userDoc.data();
-            const effectiveRole = normalizeRole(data.rol || data.role);
-            return { success: true, user: { uid: user.uid, email: user.email, ...data, rol: effectiveRole } };
+
+            // CHECK: Is Account Active?
+            if (data?.aktif === false) {
+                await signOut(auth); // Immediately sign out
+                return { success: false, message: "Hesabınız pasif durumdadır. Yönetici ile iletişime geçin." };
+            }
+
+            // @ts-ignore
+            const effectiveRole = normalizeRole(data?.rol || data?.role);
+            return {
+                success: true,
+                data: {
+                    user: {
+                        id: user.uid,
+                        uid: user.uid,
+                        email: user.email,
+                        ...data,
+                        rol: effectiveRole
+                    } as DNAUser
+                }
+            };
         } else {
             // Should not happen for Admins now due to restore logic
             return { success: false, message: "Kullanıcı bilgileri bulunamadı." };
@@ -223,7 +248,7 @@ export const loginUser = async (email: string, password: string) => {
     }
 };
 
-export const logoutUser = async () => {
+export const logoutUser = async (): Promise<ServiceResponse<void>> => {
     try {
         await signOut(auth);
         return { success: true };
@@ -232,20 +257,21 @@ export const logoutUser = async () => {
     }
 };
 
-export const getCurrentUser = async () => {
+export const getCurrentUser = async (): Promise<DNAUser | null> => {
     const user = auth.currentUser;
     if (user) {
         const userDoc = await getUserDocSafe(user.uid);
         if (userDoc.exists()) {
             const data = userDoc.data();
-            const effectiveRole = normalizeRole(data.rol || data.role);
-            return { uid: user.uid, email: user.email, ...data, rol: effectiveRole };
+            // @ts-ignore
+            const effectiveRole = normalizeRole(data?.rol || data?.role);
+            return { id: user.uid, uid: user.uid, email: user.email!, ...data, rol: effectiveRole } as DNAUser;
         }
     }
     return null;
 };
 
-export const createUser = async (userData: any, creatorEmail?: string, adminAuthPassword?: string) => {
+export const createUser = async (userData: any, creatorEmail?: string, adminAuthPassword?: string): Promise<ServiceResponse<void>> => {
     let secondaryApp: any = null;
     try {
         console.log("Creating new user (v4 - Hybrid REST Fallback) with data:", JSON.stringify(userData));
@@ -265,8 +291,10 @@ export const createUser = async (userData: any, creatorEmail?: string, adminAuth
 
         // Normalize and log role
         const normalizedRole = normalizeRole(userData.rol);
-        const userDocData = {
+
+        const userDocData: DNAUser = {
             id: newUser.uid,
+            uid: newUser.uid,
             ad: userData.ad,
             soyad: userData.soyad,
             email: userData.email,
@@ -336,7 +364,7 @@ export const createUser = async (userData: any, creatorEmail?: string, adminAuth
     }
 };
 
-export const updateUser = async (userId: string, data: any) => {
+export const updateUser = async (userId: string, data: any): Promise<ServiceResponse<void>> => {
     try {
         const userRef = doc(db, "users", userId);
         await updateDoc(userRef, data);
@@ -347,7 +375,7 @@ export const updateUser = async (userId: string, data: any) => {
     }
 };
 
-export const getAllUsers = async () => {
+export const getAllUsers = async (): Promise<ServiceResponse<DNAUser[]>> => {
     try {
         // Force server read to ensure list is up to date
         let querySnapshot;
@@ -360,14 +388,21 @@ export const getAllUsers = async () => {
 
         const users = querySnapshot.docs.map(doc => {
             const data = doc.data();
+            // @ts-ignore
             const effectiveRole = normalizeRole(data.rol || data.role);
             return {
                 id: doc.id,
+                uid: doc.id,
+                email: data.email || '',
+                ad: data.ad || '',
+                soyad: data.soyad || '',
+                aktif: data.aktif ?? true,
+                olusturmaTarihi: data.olusturmaTarihi?.toDate ? data.olusturmaTarihi.toDate() : new Date(),
                 ...data,
                 rol: effectiveRole
-            };
+            } as DNAUser;
         });
-        return { success: true, users };
+        return { success: true, data: users };
     } catch (error: any) {
         console.error("Kullanıcıları getirme hatası:", error);
         return { success: false, message: error.message };
