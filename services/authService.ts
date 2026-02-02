@@ -153,50 +153,65 @@ const checkAndRestoreAdminProfile = async (user: FirebaseUser): Promise<any | nu
 };
 
 export const onAuthChange = (callback: (user: DNAUser | null) => void) => {
-    return onAuthStateChanged(auth, async (user: FirebaseUser | null) => {
-        if (user) {
-            if (!user.email) return;
+    // Defensive check: If auth is initialized correctly
+    if (auth && typeof (auth as any).onAuthStateChanged === 'function') {
+        // Double check standard SDK vs our potential empty object
+        // If auth is empty object {}, it won't have methods, so we check existence
+        try {
+            return onAuthStateChanged(auth, async (user: FirebaseUser | null) => {
+                if (user) {
+                    if (!user.email) return;
 
-            // --- ADMIN RECOVERY CHECK ---
-            await checkAndRestoreAdminProfile(user);
-            // ----------------------------
+                    // --- ADMIN RECOVERY CHECK ---
+                    await checkAndRestoreAdminProfile(user);
+                    // ----------------------------
 
-            // Firestore'dan veri çekmeyi dene (Önce sunucu)
-            const userDocPromise = getUserDocSafe(user.uid);
-            // 5 saniye bekle (Sunucu yanıt vermezse)
-            const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 5000));
+                    // Firestore'dan veri çekmeyi dene (Önce sunucu)
+                    const userDocPromise = getUserDocSafe(user.uid);
+                    // 5 saniye bekle (Sunucu yanıt vermezse)
+                    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 5000));
 
-            let firestoreData: any = {};
-            try {
-                const result: any = await Promise.race([userDocPromise, timeoutPromise]);
-                if (result && result.exists()) {
-                    firestoreData = result.data();
+                    let firestoreData: any = {};
+                    try {
+                        const result: any = await Promise.race([userDocPromise, timeoutPromise]);
+                        if (result && result.exists()) {
+                            firestoreData = result.data();
+                        } else {
+                            console.log("Firestore profile read timed out or empty, using basic auth info.");
+                        }
+                    } catch (e) {
+                        console.warn("Firestore profile fetch failed:", e);
+                    }
+
+                    let userData: any = { uid: user.uid, email: user.email, rol: 'musteri', ...firestoreData };
+
+                    // Normalize role
+                    const rawRole = userData.rol || userData.role;
+                    const effectiveRole = normalizeRole(rawRole);
+                    userData.rol = effectiveRole;
+
+                    // --- KESİN YETKİ TANIMLAMASI (WHITELIST) ---
+                    if (APP_CONFIG.ADMIN_EMAILS.includes(user.email)) {
+                        // Just in case checkAndRestore failed but we want to grant session access
+                        userData.rol = 'yonetim';
+                    }
+
+                    callback(userData as DNAUser);
+
                 } else {
-                    console.log("Firestore profile read timed out or empty, using basic auth info.");
+                    callback(null);
                 }
-            } catch (e) {
-                console.warn("Firestore profile fetch failed:", e);
-            }
-
-            let userData: any = { uid: user.uid, email: user.email, rol: 'musteri', ...firestoreData };
-
-            // Normalize role
-            const rawRole = userData.rol || userData.role;
-            const effectiveRole = normalizeRole(rawRole);
-            userData.rol = effectiveRole;
-
-            // --- KESİN YETKİ TANIMLAMASI (WHITELIST) ---
-            if (APP_CONFIG.ADMIN_EMAILS.includes(user.email)) {
-                // Just in case checkAndRestore failed but we want to grant session access
-                userData.rol = 'yonetim';
-            }
-
-            callback(userData as DNAUser);
-
-        } else {
+            });
+        } catch (err) {
+            console.error("Critical: onAuthStateChanged failed securely.", err);
             callback(null);
+            return () => { }; // Return dummy unsubscribe
         }
-    });
+    } else {
+        console.warn("Auth object is malformed or missing in onAuthChange. Skipping auth check.");
+        callback(null);
+        return () => { }; // Dummy unsubscribe
+    }
 };
 
 export const loginUser = async (email: string, password: string): Promise<ServiceResponse<{ user: DNAUser }>> => {

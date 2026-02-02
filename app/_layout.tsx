@@ -25,6 +25,15 @@ function AuthNavigator() {
   const router = useRouter();
   const hasNavigated = useRef(false);
 
+  // Failsafe: Force hide splash screen after 10 seconds (Safety Net)
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      SplashScreen.hideAsync().catch(() => { });
+    }, 10000);
+    return () => clearTimeout(timeout);
+  }, []);
+
+  // Main Auth & Routing Logic
   useEffect(() => {
     if (loading) return;
 
@@ -77,7 +86,6 @@ function AuthNavigator() {
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-        <Stack.Screen name="ayarlar" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style={isDark ? 'light' : 'dark'} />
     </NavigationThemeProvider>
@@ -105,3 +113,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#121212',
   },
 });
+
+
+

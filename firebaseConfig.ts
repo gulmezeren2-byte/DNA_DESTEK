@@ -1,10 +1,10 @@
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 import { FirebaseApp, getApp, initializeApp } from "firebase/app";
-// @ts-ignore
-import * as FirebaseAuth from "firebase/auth";
 import {
-  browserLocalPersistence,
+  Auth,
   getAuth,
+  // @ts-ignore
+  getReactNativePersistence,
   initializeAuth
 } from "firebase/auth";
 import {
@@ -15,7 +15,7 @@ import {
 import { Platform } from 'react-native';
 
 const firebaseConfig = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || "missing-api-key",
   authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
   storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
@@ -23,85 +23,79 @@ const firebaseConfig = {
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
-if (!firebaseConfig.apiKey) {
-  console.error("Firebase API Key is missing! Check .env file.");
+if (firebaseConfig.apiKey === "missing-api-key") {
+  console.error("❌ CRITICAL: Firebase API Key is MISSING! App will likely crash or fail to connect.");
+  console.error("Make sure EXPO_PUBLIC_FIREBASE_API_KEY is defined.");
 }
 
+// 1. Initialize App
 let app: FirebaseApp;
 try {
   app = getApp();
 } catch {
-  app = initializeApp(firebaseConfig);
+  try {
+    app = initializeApp(firebaseConfig);
+  } catch (e) {
+    console.error("❌ Firebase Init Failed:", e);
+    // Dummy app to prevent immediate crash, though subsequent calls will likely fail
+    app = { name: '[DEFAULT]', options: firebaseConfig } as FirebaseApp;
+  }
 }
 
-// Auth kurulumu
-let auth: FirebaseAuth.Auth;
-
-if (Platform.OS === 'web') {
+// 2. Initialize Auth
+let auth: Auth;
+// Helper to avoid duplicate logic
+const initializeNativeAuth = () => {
   try {
-    auth = getAuth(app);
-  } catch {
-    auth = initializeAuth(app, {
-      persistence: browserLocalPersistence
-    });
-  }
-} else {
-  try {
-    console.log("🔥 Initializing Auth with Native Persistence...");
-    auth = initializeAuth(app, {
-      persistence: (FirebaseAuth as any).getReactNativePersistence(ReactNativeAsyncStorage)
-    });
-    console.log("✅ Auth initialized successfully.");
+    if (typeof getReactNativePersistence === 'function') {
+      return initializeAuth(app, {
+        persistence: getReactNativePersistence(ReactNativeAsyncStorage)
+      });
+    } else {
+      console.warn("⚠️ getReactNativePersistence is not a function.");
+      return getAuth(app);
+    }
   } catch (e: any) {
     if (e.code === 'auth/already-initialized') {
-      console.warn("⚠️ Auth already initialized, retrieving instance...");
+      return getAuth(app);
+    }
+    throw e;
+  }
+}
+
+if (Platform.OS === 'web') {
+  auth = getAuth(app);
+} else {
+  // NATIVE
+  try {
+    console.log("🔥 Initializing Auth with Native Persistence...");
+    auth = initializeNativeAuth();
+    console.log("✅ Auth initialized successfully.");
+  } catch (e: any) {
+    console.error("❌ Native Auth Init Failed:", e);
+    // Fallback to memory auth (standard getAuth)
+    try {
       auth = getAuth(app);
-    } else {
-      console.error("❌ Native Auth Init Failed:", e);
-      console.warn("⚠️ Falling back to memory-only auth (no persistence)...");
-      try {
-        auth = getAuth(app);
-      } catch (fallbackError) {
-        console.error("❌ CRITICAL: Fallback Auth Init also failed!", fallbackError);
-        // Prevent crash by assigning a dummy object if absolutely necessary, 
-        // but normally getAuth should work if app is valid.
-        throw fallbackError;
-      }
+    } catch {
+      // Last resort
+      auth = {} as Auth;
     }
   }
 }
 
-// Firestore kurulumu
-// Web'de WebSockets yerine Long Polling kullan (Firewall/Proxy sorunlarını çözer)
+// 3. Initialize Firestore
 let db: Firestore;
-
 try {
-  // force long polling for stability
   db = initializeFirestore(app, {
     experimentalForceLongPolling: true,
   });
-  console.log("Firestore initialized with Long Polling");
 } catch (e) {
-  // Zaten başlatılmışsa mevcut instance'ı al
-  console.warn("Firestore already initialized, retrieving instance:", e);
-  db = getFirestore(app);
-}
-
-// PERSISTENCE ENABLED
-if (Platform.OS === 'web') {
   try {
-    const { enableIndexedDbPersistence } = require("firebase/firestore");
-    enableIndexedDbPersistence(db).catch((err: any) => {
-      console.warn("Persistence failed:", err.code);
-    });
-  } catch (err) {
-    // Zaten aktif olabilir veya import hatası
-    console.warn("Persistence setup error:", err);
+    db = getFirestore(app);
+  } catch {
+    console.error("❌ Firestore Init Failed");
+    db = {} as Firestore;
   }
-}
-
-function extractAuth(app: FirebaseApp): FirebaseAuth.Auth {
-  return (FirebaseAuth as any).getAuth(app);
 }
 
 export { auth, db };
