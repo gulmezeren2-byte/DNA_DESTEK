@@ -56,10 +56,28 @@ const durumRenkleri: Record<string, string> = {
 const kategoriRenkleri = ['#8b5cf6', '#06b6d4', '#f59e0b', '#ef4444', '#10b981', '#ec4899', '#6366f1'];
 
 export default function RaporlarScreen() {
-    const { user } = useAuth();
+    const { user, isYonetim } = useAuth();
     const { isDark, colors } = useTheme();
     const router = useRouter();
     const { width: windowWidth } = useWindowDimensions();
+
+    // SEC-003 FIX: Immediate role guard - prevents content flash
+    if (!isYonetim) {
+        return (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? '#121212' : '#fff' }}>
+                <Ionicons name="lock-closed" size={64} color={isDark ? '#666' : '#ccc'} />
+                <Text style={{ marginTop: 16, fontSize: 18, color: isDark ? '#aaa' : '#666' }}>
+                    Bu sayfaya erişim yetkiniz yok
+                </Text>
+                <TouchableOpacity
+                    onPress={() => router.replace('/(tabs)')}
+                    style={{ marginTop: 24, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: colors.primary, borderRadius: 8 }}
+                >
+                    <Text style={{ color: '#fff', fontWeight: '600' }}>Ana Sayfaya Dön</Text>
+                </TouchableOpacity>
+            </View>
+        );
+    }
 
     // Responsive Hesaplama
     // Web'de max-width: 1600px olsun (Büyük ekranlar için)
@@ -86,12 +104,6 @@ export default function RaporlarScreen() {
     // Global Counts State
     const [globalStats, setGlobalStats] = useState({ toplam: 0, acik: 0, cozuldu: 0, acil: 0 });
 
-    // Yönetici kontrolü
-    useEffect(() => {
-        if (user && user.rol !== 'yonetim') {
-            router.replace('/');
-        }
-    }, [user]);
 
     const verileriYukle = async () => {
         try {

@@ -1,0 +1,44 @@
+# DNA DESTEK - Technician Flow Test
+# Test: Teknisyen talep güncelleme akışı
+
+appId: com.dnadestek.app
+
+---
+- launchApp
+
+# Teknisyen olarak giriş yap
+- tapOn:
+    id: "email-input"
+- inputText: "teknisyen@example.com"
+- tapOn:
+    id: "password-input"
+- inputText: "Test123!"
+- tapOn: "Giriş Yap"
+
+# Ana sayfa yüklenene kadar bekle
+- assertVisible:
+    text: "DNA DESTEK"
+    timeout: 10000
+
+# Teknisyen sekmesi görünmeli
+- assertVisible:
+    text: "Görevlerim"
+
+# Görevlerim sayfasına git
+- tapOn: "Görevlerim"
+
+# Talep listesi yüklenmeli
+- assertVisible:
+    text: "Aktif|Bekleyen"
+    timeout: 5000
+
+# İlk talebe tıkla (varsa)
+- tapOn:
+    text: ".*"
+    index: 0
+    optional: true
+
+# Durum değiştirme seçenekleri görünmeli
+- assertVisible:
+    text: "İşlemde|Beklemede|Çözüldü"
+    optional: true

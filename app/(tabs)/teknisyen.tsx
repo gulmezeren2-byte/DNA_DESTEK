@@ -3,7 +3,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { arrayUnion, collection, doc, Firestore, getDoc, limit, onSnapshot, orderBy, query, Timestamp, updateDoc, where } from 'firebase/firestore';
+import { arrayUnion, collection, doc, Firestore, limit, onSnapshot, orderBy, query, Timestamp, updateDoc, where } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -23,7 +23,6 @@ import { ListSkeleton } from '../../components/Skeleton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { db as dbAny } from '../../firebaseConfig';
-import { sendPushNotification } from '../../services/notificationService';
 import toast from '../../services/toastService';
 import { Talep } from '../../types';
 const db = dbAny as Firestore;
@@ -46,9 +45,27 @@ const durumConfig: Record<string, { label: string; text: string; bg: string; tex
 };
 
 export default function TeknisyenScreen() {
-    const { user } = useAuth();
+    const { user, isTeknisyen } = useAuth();
     const { isDark, colors } = useTheme();
     const router = useRouter();
+
+    // SEC-003 FIX: Server-side role guard - prevent unauthorized access via URL
+    if (!isTeknisyen) {
+        return (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? '#121212' : '#fff' }}>
+                <Ionicons name="lock-closed" size={64} color={isDark ? '#666' : '#ccc'} />
+                <Text style={{ marginTop: 16, fontSize: 18, color: isDark ? '#aaa' : '#666' }}>
+                    Bu sayfaya erişim yetkiniz yok
+                </Text>
+                <TouchableOpacity
+                    onPress={() => router.replace('/(tabs)')}
+                    style={{ marginTop: 24, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: colors.primary, borderRadius: 8 }}
+                >
+                    <Text style={{ color: '#fff', fontWeight: '600' }}>Ana Sayfaya Dön</Text>
+                </TouchableOpacity>
+            </View>
+        );
+    }
 
     const [talepler, setTalepler] = useState<Talep[]>([]);
     const [yukleniyor, setYukleniyor] = useState(true);
@@ -119,26 +136,8 @@ export default function TeknisyenScreen() {
                 cozumFotograflari: cozumUrls
             });
 
-            // Bildirim Gönder. Type check for musteriId since it's now olusturanId in new type but still musteriId in old data
-            // We should use olusturanId if available, fallback to musteriId
-            // But Talep type has only olusturanId.
-            // Wait, I updated Talep type to have musteriAdi?, yes. But I should check if I need to update code to use olusturanId.
-
-            const targetUserId = seciliTalep.olusturanId || (seciliTalep as any).musteriId;
-            if (targetUserId) {
-                const tokenDoc = await getDoc(doc(db as Firestore, 'push_tokens', targetUserId));
-                if (tokenDoc.exists()) {
-                    const tokenData = tokenDoc.data();
-                    if (tokenData?.token) {
-                        const fotoMesaj = cozumUrls.length > 0 ? ' 📸 (Fotoğraflı Çözüm)' : '';
-                        await sendPushNotification(
-                            tokenData.token,
-                            'Talep Çözüldü ✅',
-                            `Sayın ${seciliTalep.musteriAdi || seciliTalep.olusturanAd}, talebiniz çözüldü olarak işaretlendi.${fotoMesaj}`
-                        );
-                    }
-                }
-            }
+            // SEC-001 FIX: Client-side notification kaldırıldı
+            // Cloud Functions (onTalepStatusChange) bildirim gönderecek
 
             toast.success('Talep çözüldü olarak işaretlendi!');
             setCozumModalVisible(false);
@@ -305,26 +304,13 @@ export default function TeknisyenScreen() {
 
             await updateDoc(doc(db as Firestore, 'talepler', seciliTalep.id), updateData);
 
-            // Bildirim Gönder
-            const targetUserId = seciliTalep.olusturanId || (seciliTalep as any).musteriId;
-            if (targetUserId) {
-                try {
-                    const musteriDoc = await getDoc(doc(db as Firestore, 'users', targetUserId));
-                    if (musteriDoc.exists()) {
-                        const musteriData = musteriDoc.data();
-                        if (musteriData?.pushToken) {
-                            const durumEtiket = durumConfig[yeniDurum]?.label || yeniDurum;
-                            await sendPushNotification(
-                                musteriData.pushToken,
-                                'Talep Durumu Güncellendi 🔔',
-                                `Talebinizin durumu "${durumEtiket}" olarak güncellendi.`
-                            );
-                        }
-                    }
-                } catch (err) {
-                    console.error('Bildirim hatası:', err);
-                }
+            // SEC-010: Audit log for status change
+            if (user) {
+                AuditLog.talepStatusChanged(user.id, user.email, seciliTalep.id, seciliTalep.durum, yeniDurum);
             }
+
+            // SEC-001 FIX: Client-side notification kaldırıldı
+            // Cloud Functions (onTalepStatusChange) bildirim gönderecek
 
             toast.success('Durum güncellendi!');
 

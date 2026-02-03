@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -26,7 +26,6 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { db } from '../../firebaseConfig';
 import { assignTalepToEkip, getActiveEkipler } from '../../services/ekipService';
-import { sendPushNotification } from '../../services/notificationService';
 import { getTalepler, subscribeToTalepler } from '../../services/talepService';
 import toast from '../../services/toastService';
 import { Ekip, Talep } from '../../types';
@@ -34,9 +33,27 @@ import { Ekip, Talep } from '../../types';
 // const durumConfig removed - using global DURUM_CONFIG
 
 export default function YonetimScreen() {
-    const { user } = useAuth();
+    const { user, isYonetim } = useAuth();
     const { isDark, colors } = useTheme();
     const router = useRouter();
+
+    // SEC-003 FIX: Server-side role guard - prevent unauthorized access via URL
+    if (!isYonetim) {
+        return (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? '#121212' : '#fff' }}>
+                <Ionicons name="lock-closed" size={64} color={isDark ? '#666' : '#ccc'} />
+                <Text style={{ marginTop: 16, fontSize: 18, color: isDark ? '#aaa' : '#666' }}>
+                    Bu sayfaya erişim yetkiniz yok
+                </Text>
+                <TouchableOpacity
+                    onPress={() => router.replace('/(tabs)')}
+                    style={{ marginTop: 24, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: colors.primary, borderRadius: 8 }}
+                >
+                    <Text style={{ color: '#fff', fontWeight: '600' }}>Ana Sayfaya Dön</Text>
+                </TouchableOpacity>
+            </View>
+        );
+    }
 
     // State
     // State Strategy Refactor: Split Head (Realtime) & Tail (Pagination)
@@ -216,51 +233,15 @@ export default function YonetimScreen() {
                 throw new Error(result.message);
             }
 
-            // Bildirim Gönder (Müşteriye)
-            const targetUserId = seciliTalep.olusturanId;
-            if (targetUserId) {
-                try {
-                    const tokenDoc = await getDoc(doc(db, 'push_tokens', targetUserId));
-                    if (tokenDoc.exists()) {
-                        const tokenData = tokenDoc.data();
-                        if (tokenData?.token) {
-                            await sendPushNotification(
-                                tokenData.token,
-                                'Ekip Atandı 🛠️',
-                                `Sayın ${seciliTalep.musteriAdi || seciliTalep.olusturanAd || 'Müşteri'}, talebiniz için ${ekip.ad} atandı.`
-                            );
-                        }
-                    }
-                } catch (err) {
-                    console.error('Müşteri bildirim hatası:', err);
-                }
+            // SEC-010: Audit log for talep assignment
+            if (user) {
+                AuditLog.talepAssigned(user.id, user.email, seciliTalep.id, ekip.id, ekip.ad);
             }
 
-            // Bildirim Gönder (Ekip Üyelerine / Teknisyenlere)
-            if (ekip.uyeler && ekip.uyeler.length > 0) {
-                try {
-                    // Tüm üyelerin push tokenlarını çek ve bildirim gönder
-                    ekip.uyeler.forEach(async (memberId) => {
-                        try {
-                            const tokenDoc = await getDoc(doc(db, 'push_tokens', memberId));
-                            if (tokenDoc.exists()) {
-                                const tokenData = tokenDoc.data();
-                                if (tokenData?.token) {
-                                    await sendPushNotification(
-                                        tokenData.token,
-                                        'Yeni Görev Atandı 📋',
-                                        `${seciliTalep.projeAdi}: ${seciliTalep.baslik}`
-                                    );
-                                }
-                            }
-                        } catch (err) {
-                            console.error(`Üye (${memberId}) bildirim hatası:`, err);
-                        }
-                    });
-                } catch (err) {
-                    console.error('Ekip bildirim hatası:', err);
-                }
-            }
+            // SEC-001 FIX: Client-side notification gönderimi kaldırıldı
+            // Push token erişimi artık owner-only (güvenlik için)
+            // Cloud Functions (onTalepAssigned) Firestore trigger ile bildirim gönderecek
+            // Deploy: firebase deploy --only functions
 
             toast.success(`Talep "${ekip.ad}" ekibine atandı!`);
 

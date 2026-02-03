@@ -1,0 +1,46 @@
+# DNA DESTEK - Create Talep Flow Test
+# Test: Müşteri yeni talep oluşturma
+
+appId: com.dnadestek.app
+
+---
+- launchApp
+
+# Önce giriş yap (login flow'u çağır)
+- runFlow: login_flow.yaml
+
+# Yeni Talep sayfasına git
+- tapOn: "Yeni Talep"
+
+# Form alanlarını doldur
+- assertVisible: "Başlık"
+
+# Proje seç
+- tapOn:
+    id: "project-picker"
+- tapOn:
+    text: ".*"
+    index: 0
+
+# Kategori seç
+- tapOn:
+    id: "category-picker"
+- tapOn: "Elektrik"
+
+# Başlık gir
+- tapOn:
+    id: "title-input"
+- inputText: "Test Talebi - E2E"
+
+# Açıklama gir
+- tapOn:
+    id: "description-input"
+- inputText: "Bu bir E2E test talebidir. Otomatik oluşturulmuştur."
+
+# Gönder
+- tapOn: "Talep Oluştur"
+
+# Başarı mesajı kontrolü
+- assertVisible:
+    text: "Talep.*oluşturuldu"
+    timeout: 10000

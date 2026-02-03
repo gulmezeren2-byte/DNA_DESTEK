@@ -46,6 +46,37 @@ try {
   auth = {} as any;
 }
 
+// SEC-004: Initialize Firebase App Check
+// Note: App Check requires additional setup in Firebase Console
+// and adding the verify callback secret key for production
+const initializeAppCheck = async () => {
+  try {
+    // Only initialize in client environment (not server-side rendering)
+    if (typeof window !== 'undefined' && app) {
+      const { initializeAppCheck: initAppCheck, ReCaptchaV3Provider } = await import('firebase/app-check');
+
+      // For development, you can use debug token
+      // In production, use ReCaptchaV3Provider with your site key
+      const RECAPTCHA_SITE_KEY = process.env.EXPO_PUBLIC_RECAPTCHA_SITE_KEY;
+
+      if (RECAPTCHA_SITE_KEY) {
+        initAppCheck(app, {
+          provider: new ReCaptchaV3Provider(RECAPTCHA_SITE_KEY),
+          isTokenAutoRefreshEnabled: true
+        });
+        console.log("✅ App Check initialized with ReCaptcha");
+      } else {
+        console.warn("⚠️ App Check: RECAPTCHA_SITE_KEY not set, skipping initialization");
+      }
+    }
+  } catch (e) {
+    console.warn("⚠️ App Check init skipped:", e);
+  }
+};
+
+// Initialize App Check (async, non-blocking)
+initializeAppCheck();
+
 // Helper getter
 export const getAuthInstance = async () => auth;
 

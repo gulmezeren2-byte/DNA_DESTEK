@@ -1,0 +1,34 @@
+# DNA DESTEK - Login Flow Test
+# Test: Müşteri girişi
+
+appId: com.dnadestek.app
+
+---
+- launchApp
+
+# Login ekranında input'ları bekle
+- assertVisible: "E-posta"
+- assertVisible: "Şifre"
+
+# E-posta gir
+- tapOn:
+    id: "email-input"
+- inputText: "test@example.com"
+
+# Şifre gir
+- tapOn:
+    id: "password-input"
+- inputText: "Test123!"
+
+# Giriş yap butonuna tıkla
+- tapOn: "Giriş Yap"
+
+# Başarılı giriş kontrolü - Ana sayfa görünmeli
+- assertVisible:
+    text: "DNA DESTEK"
+    timeout: 10000
+
+# Drawer veya bottom tab görünmeli
+- assertVisible:
+    text: "Taleplerim"
+    optional: true

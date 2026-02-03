@@ -44,9 +44,27 @@ const RENK_SECENEKLERI = [
 ];
 
 export default function EkiplerScreen() {
-    const { user } = useAuth();
-    const { colors } = useTheme();
+    const { user, isYonetim } = useAuth();
+    const { isDark, colors } = useTheme();
     const router = useRouter();
+
+    // SEC-003 FIX: Immediate role guard - prevents content flash
+    if (!isYonetim) {
+        return (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? '#121212' : '#fff' }}>
+                <Ionicons name="lock-closed" size={64} color={isDark ? '#666' : '#ccc'} />
+                <Text style={{ marginTop: 16, fontSize: 18, color: isDark ? '#aaa' : '#666' }}>
+                    Bu sayfaya erişim yetkiniz yok
+                </Text>
+                <TouchableOpacity
+                    onPress={() => router.replace('/(tabs)')}
+                    style={{ marginTop: 24, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: colors.primary, borderRadius: 8 }}
+                >
+                    <Text style={{ color: '#fff', fontWeight: '600' }}>Ana Sayfaya Dön</Text>
+                </TouchableOpacity>
+            </View>
+        );
+    }
 
     const [ekipler, setEkipler] = useState<Ekip[]>([]);
     const [kullanicilar, setKullanicilar] = useState<Kullanici[]>([]);
@@ -64,12 +82,6 @@ export default function EkiplerScreen() {
     const [yeniEkipRenk, setYeniEkipRenk] = useState('#3b82f6');
     const [duzenlemeMode, setDuzenlemeMode] = useState(false);
 
-    // Yönetici kontrolü
-    useEffect(() => {
-        if (user && user.rol !== 'yonetim') {
-            router.replace('/');
-        }
-    }, [user]);
 
     const verileriYukle = async () => {
         const [ekipResult, kullaniciResult] = await Promise.all([

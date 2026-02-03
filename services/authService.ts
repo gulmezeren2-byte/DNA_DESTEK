@@ -21,12 +21,18 @@ import {
 import { APP_CONFIG } from "../constants";
 import { db, firebaseConfig, getAuthInstance } from "../firebaseConfig";
 import { DNAUser, ServiceResponse, UserRole } from "../types";
+import { AuditLog } from "./auditService";
 
+// SEC-005 FIX: Strict role normalization - only accept exact matches
 const normalizeRole = (role: string | undefined): UserRole => {
     if (!role) return 'musteri';
     const r = role.toLowerCase().trim();
-    if (r === 'yonetici' || r === 'admin' || r === 'yonetim' || r === 'manager') return 'yonetim';
-    if (r === 'teknisyen' || r === 'teknik' || r === 'technician') return 'teknisyen';
+    // Accept only exact canonical role values
+    if (r === 'yonetim') return 'yonetim';
+    if (r === 'teknisyen') return 'teknisyen';
+    if (r === 'musteri') return 'musteri';
+    // Unknown roles default to musteri (least privileged)
+    console.warn(`SEC-005: Unknown role "${role}" defaulted to musteri`);
     return 'musteri';
 };
 
@@ -189,11 +195,9 @@ export const onAuthChange = (callback: (user: DNAUser | null) => void) => {
                         const effectiveRole = normalizeRole(rawRole);
                         userData.rol = effectiveRole;
 
-                        // --- KESİN YETKİ TANIMLAMASI (WHITELIST) ---
-                        if (APP_CONFIG.ADMIN_EMAILS.includes(user.email)) {
-                            // Just in case checkAndRestore failed but we want to grant session access
-                            userData.rol = 'yonetim';
-                        }
+                        // SEC-002 FIX: Role is now ONLY determined by Firestore data.
+                        // Admin whitelist (isAdminEmail) is enforced in Firestore rules, NOT here.
+                        // Client-side override was a security risk (privilege escalation).
 
                         callback(userData as DNAUser);
 
@@ -252,6 +256,10 @@ export const loginUser = async (email: string, password: string): Promise<Servic
 
             // @ts-ignore
             const effectiveRole = normalizeRole(data?.rol || data?.role);
+
+            // SEC-010: Audit log for successful login
+            AuditLog.loginSuccess(user.uid, user.email);
+
             return {
                 success: true,
                 data: {
@@ -385,6 +393,14 @@ export const createUser = async (userData: any, creatorEmail?: string, adminAuth
         }
 
         if (sdkWriteSuccess) {
+            // SEC-010: Audit log for user creation
+            AuditLog.userCreated(
+                mainAuth.currentUser!.uid,
+                mainAuth.currentUser!.email!,
+                userDocData.id,
+                userData.email,
+                normalizedRole
+            );
             return { success: true };
         }
 

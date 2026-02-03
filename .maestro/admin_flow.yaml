@@ -1,0 +1,48 @@
+# DNA DESTEK - Admin Flow Test
+# Test: Yönetici talep atama akışı
+
+appId: com.dnadestek.app
+
+---
+- launchApp
+
+# Admin olarak giriş yap
+- tapOn:
+    id: "email-input"
+- inputText: "admin@dnadestek.com"
+- tapOn:
+    id: "password-input"
+- inputText: "AdminPass123!"
+- tapOn: "Giriş Yap"
+
+# Ana sayfa yüklenene kadar bekle
+- assertVisible:
+    text: "DNA DESTEK"
+    timeout: 10000
+
+# Yönetim sekmesi görünmeli
+- assertVisible: "Yönetim"
+
+# Yönetim sayfasına git
+- tapOn: "Yönetim"
+
+# Talep listesi yüklenmeli
+- assertVisible:
+    text: "Talepler"
+    timeout: 5000
+
+# Kullanıcılar sayfasına git
+- tapOn: "Kullanıcılar"
+
+# Kullanıcı listesi görünmeli
+- assertVisible:
+    text: "Kullanıcı|Müşteri|Teknisyen"
+    timeout: 5000
+
+# Ekipler sayfasına git
+- tapOn: "Ekipler"
+
+# Ekip listesi görünmeli
+- assertVisible:
+    text: "Ekip"
+    timeout: 5000

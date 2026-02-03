@@ -1,0 +1,44 @@
+# DNA DESTEK - Role Guard Security Test
+# Test: Müşteri admin sayfalarına erişememeli
+
+appId: com.dnadestek.app
+
+---
+- launchApp
+
+# Müşteri olarak giriş yap
+- tapOn:
+    id: "email-input"
+- inputText: "musteri@example.com"
+- tapOn:
+    id: "password-input"
+- inputText: "Test123!"
+- tapOn: "Giriş Yap"
+
+# Ana sayfa yüklenene kadar bekle
+- assertVisible:
+    text: "DNA DESTEK"
+    timeout: 10000
+
+# Yönetim sekmesi görünMEMELİ
+- assertNotVisible:
+    text: "Yönetim"
+    timeout: 3000
+
+# Kullanıcılar sekmesi görünMEMELİ
+- assertNotVisible:
+    text: "Kullanıcılar"
+    timeout: 3000
+
+# Ekipler sekmesi görünMEMELİ
+- assertNotVisible:
+    text: "Ekipler"
+    timeout: 3000
+
+# Deep link ile yönetim sayfasına gitmeye çalış
+- openLink: "dnadestek://yonetim"
+
+# Erişim engellendi mesajı veya ana sayfa görünmeli
+- assertVisible:
+    text: "erişim yetkiniz yok|Taleplerim"
+    timeout: 5000

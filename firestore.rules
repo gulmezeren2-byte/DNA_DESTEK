@@ -114,10 +114,30 @@ service cloud.firestore {
 
     // =====================
     // PUSH TOKENLARI (push_tokens)
+    // SEC-001 FIX: Owner-only access - prevents token exfiltration
+    // Cloud Functions will read tokens server-side with admin SDK
     // =====================
     match /push_tokens/{userId} {
-      allow read: if isAdmin() || isTechnician();
-      allow get, write: if isSignedIn() && isOwner(userId);
+      // READ: Sadece token sahibi okuyabilir (admin/teknisyen KALDIRILDI)
+      // Cloud Functions admin SDK ile server-side okuyacak
+      allow read: if isSignedIn() && isOwner(userId);
+      
+      // WRITE: Sadece token sahibi yazabilir
+      allow write: if isSignedIn() && isOwner(userId);
+    }
+
+    // =====================
+    // SEC-010: AUDIT LOGS (audit_logs)
+    // =====================
+    match /audit_logs/{logId} {
+      // Okuma: Sadece yöneticiler audit loglarını görebilir
+      allow read: if isAdmin();
+      
+      // Oluşturma: Giriş yapmış herkes log oluşturabilir (kendi actionları için)
+      allow create: if isSignedIn();
+      
+      // Güncelleme/Silme: YASAK - Loglar değiştirilemez (immutable)
+      allow update, delete: if false;
     }
   }
 }

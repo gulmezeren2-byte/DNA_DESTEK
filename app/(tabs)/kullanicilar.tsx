@@ -46,9 +46,27 @@ const rolConfig: Record<string, { label: string; color: string; icon: string }> 
 const kategoriSecenekleri = ['Tesisat', 'Elektrik', 'Boya', 'Mobilya', 'Pencere', 'Kapı', 'Diğer'];
 
 export default function KullanicilarScreen() {
-    const { user } = useAuth();
+    const { user, isYonetim } = useAuth();
     const { isDark, colors } = useTheme();
     const router = useRouter();
+
+    // SEC-003 FIX: Immediate role guard - prevents content flash
+    if (!isYonetim) {
+        return (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? '#121212' : '#fff' }}>
+                <Ionicons name="lock-closed" size={64} color={isDark ? '#666' : '#ccc'} />
+                <Text style={{ marginTop: 16, fontSize: 18, color: isDark ? '#aaa' : '#666' }}>
+                    Bu sayfaya erişim yetkiniz yok
+                </Text>
+                <TouchableOpacity
+                    onPress={() => router.replace('/(tabs)')}
+                    style={{ marginTop: 24, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: colors.primary, borderRadius: 8 }}
+                >
+                    <Text style={{ color: '#fff', fontWeight: '600' }}>Ana Sayfaya Dön</Text>
+                </TouchableOpacity>
+            </View>
+        );
+    }
 
     const [kullanicilar, setKullanicilar] = useState<Kullanici[]>([]);
     const [yukleniyor, setYukleniyor] = useState(true);
@@ -99,12 +117,6 @@ export default function KullanicilarScreen() {
         verileriYukle();
     }, []);
 
-    // Yönetici kontrolü - Güvenlik için
-    useEffect(() => {
-        if (user && user.rol !== 'yonetim') {
-            router.replace('/');
-        }
-    }, [user]);
 
     const filtrelenmisKullanicilar = kullanicilar.filter(k => {
         let uygun = true;

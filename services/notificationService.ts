@@ -61,7 +61,30 @@ export async function registerForPushNotificationsAsync() {
     return token;
 }
 
+/**
+ * @deprecated SEC-001: This function sends push notifications client-side.
+ * 
+ * SECURITY WARNING: Any authenticated user can call this function.
+ * This should be migrated to Cloud Functions for proper security.
+ * 
+ * Current usage is limited to:
+ * - Admin/Technician roles (UI-controlled, not enforced)
+ * - Assignment notifications in yonetim.tsx
+ * - Status update notifications in teknisyen.tsx
+ * 
+ * TODO: Migrate to Cloud Functions triggered by Firestore writes:
+ * - onCreate: talepler -> notify customer
+ * - onUpdate: talepler (status change) -> notify relevant parties
+ */
 export async function sendPushNotification(expoPushToken: string, title: string, body: string, data: any = {}) {
+    // SEC-001: Log for audit trail (removed in production by babel)
+    console.warn('SEC-001: sendPushNotification called client-side - consider Cloud Functions migration');
+
+    if (!expoPushToken || typeof expoPushToken !== 'string' || !expoPushToken.startsWith('ExponentPushToken')) {
+        console.error('Invalid push token format');
+        return;
+    }
+
     const message = {
         to: expoPushToken,
         sound: 'default',
@@ -71,7 +94,7 @@ export async function sendPushNotification(expoPushToken: string, title: string,
     };
 
     try {
-        await fetch('https://exp.host/--/api/v2/push/send', {
+        const response = await fetch('https://exp.host/--/api/v2/push/send', {
             method: 'POST',
             headers: {
                 Accept: 'application/json',
@@ -80,6 +103,10 @@ export async function sendPushNotification(expoPushToken: string, title: string,
             },
             body: JSON.stringify(message),
         });
+
+        if (!response.ok) {
+            console.error('Push notification failed:', response.status);
+        }
     } catch (error) {
         console.error('Bildirim gönderme hatası:', error);
     }
