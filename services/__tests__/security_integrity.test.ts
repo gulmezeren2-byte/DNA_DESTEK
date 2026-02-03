@@ -5,7 +5,8 @@ import { deleteEkip } from '../ekipService';
 // Mock Firebase Config
 jest.mock('../../firebaseConfig', () => ({
     db: {},
-    auth: {}
+    auth: {},
+    getAuthInstance: jest.fn().mockResolvedValue({})
 }));
 
 // Mock Firebase Consts
