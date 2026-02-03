@@ -2,13 +2,13 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Helper functions
+    // Yardımcı Fonksiyonlar
     function isSignedIn() {
       return request.auth != null;
     }
     
     function isAdminEmail() {
-      // Hardcoded Admin Whitelist - Server Side Source of Truth
+      // Sunucu taraflı Admin Beyaz Listesi (Source of Truth)
       return request.auth.token.email in ['admin@dnadestek.com', 'eren.gulmez@dnadestek.com'];
     }
 
@@ -24,36 +24,35 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
 
-    // Users Collection
+    // Kullanıcılar Koleksiyonu
     match /users/{userId} {
-      // Read: Owner can see own profile. Admin/Tech can see specific profiles.
+      // Oku: Kişi kendi profilini, Admin/Teknisyen ise ilgili profilleri görebilir.
       allow get: if isSignedIn() && (isOwner(userId) || isAdmin() || isTechnician());
-      // List: Only Admins can list all users (Technicians restricted for privacy)
+      
+      // Listele: Sadece yöneticiler tüm kullanıcıları listeleyebilir (Gizlilik Gereği).
       allow list: if isAdmin();
       
-      // Create: Owner can create own profile.
-      // Must validate Role: 
-      // - Standard users can ONLY set 'musteri'.
-      // - Whitelisted emails can set 'yonetim'.
-      // - Nobody can self-assign 'teknisyen'.
+      // Oluştur: 
+      // - Standart kullanıcılar sadece 'musteri' rolüyle kaydolabilir.
+      // - Beyaz listedeki e-postalar 'yonetim' olarak kaydolabilir.
       allow create: if isSignedIn() && isOwner(userId) && (
         request.resource.data.rol == 'musteri' || 
         (request.resource.data.rol == 'yonetim' && isAdminEmail())
       );
       
-      // Update: Admin can update anyone. Owner can update self.
-      // - If Owner updates, they CANNOT escalate privileges or change 'aktif' status.
+      // Güncelle: Admin her şeyi yapabilir. Kullanıcı sadece kendi bilgilerini güncelleyebilir (Rol/Aktiflik hariç).
       allow update: if isAdmin() || (isOwner(userId) && (
-        (request.resource.data.rol == resource.data.rol && request.resource.data.aktif == resource.data.aktif) // Role and Active status must not change for owner update
+        request.resource.data.rol == resource.data.rol && 
+        request.resource.data.aktif == resource.data.aktif
       ));
       
-      // Admin creation via Management screen
-      allow create: if isAdmin() || (isSignedIn() && isOwner(userId) && request.resource.data.rol == 'musteri');
+      // Yönetim paneli üzerinden kullanıcı oluşturma
+      allow create: if isAdmin();
     }
 
-    // Talepler Collection
+    // Talepler Koleksiyonu
     match /talepler/{talepId} {
-      // Read: Admins see all. Technicians see ONLY assigned tickets. Customers see their own.
+      // Okuma Kısıtı: Yönetici her şeyi, Teknisyen sadece atanmış işleri görür. Müşteri kendi işini görür.
       allow read: if isSignedIn() && (
         isAdmin() || 
         (isTechnician() && (
@@ -63,45 +62,47 @@ service cloud.firestore {
         resource.data.olusturanId == request.auth.uid ||
         resource.data.musteriId == request.auth.uid
       );
+
+      // Oluşturma: Sadece yeni durumda ve normal/acil öncelikle başlanabilir.
       allow create: if isSignedIn() && 
         request.resource.data.olusturanId == request.auth.uid && 
         request.resource.data.durum == 'yeni' &&
         request.resource.data.oncelik in ['normal', 'acil'];
+
+      // Güncelleme:
       allow update: if isSignedIn() && (
         isAdmin() || 
-        // Technician: Can update status, solution, and comments on assigned tickets
+        // Teknisyen: Sadece atanmış işlerin durumunu, çözümünü ve yorumlarını güncelleyebilir.
         (isTechnician() && (
           (resource.data.atananTeknisyenId == request.auth.uid || 
            resource.data.atananEkipId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kategori) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['durum', 'cozumTarihi', 'cozumFotograflari', 'guncellemeTarihi', 'yorumlar'])
         )) ||
-        // Customer: Can edit own ticket if 'yeni', or rate if 'cozuldu'
+        // Müşteri:
         (resource.data.olusturanId == request.auth.uid && (
-          // Edit only when status is 'yeni'
+          // 1. Düzenleme: Sadece durum 'yeni' ise başlık, açıklama ve fotoğraf değiştirebilir.
           (resource.data.durum == 'yeni' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['baslik', 'aciklama', 'fotograflar', 'guncellemeTarihi'])) ||
-          // Cancel only when status is 'yeni'
+          // 2. İptal: Sadece durum 'yeni' ise iptal edebilir.
           (resource.data.durum == 'yeni' && request.resource.data.durum == 'iptal' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['durum', 'guncellemeTarihi'])) ||
-          // Rate only when status is 'cozuldu'
+          // 3. Puanlama: Sadece durum 'cozuldu' ise puan verebilir.
           (resource.data.durum == 'cozuldu' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['puan', 'degerlendirme', 'degerlendirmeTarihi']))
         ))
       );
     }
 
-    // Ekipler Collection - Admin only for CRUD
+    // Ekipler Koleksiyonu
     match /ekipler/{ekipId} {
       allow read: if isSignedIn() && (isAdmin() || isTechnician());
-      allow create: if isAdmin() || isAdminEmail();
-      allow update: if isAdmin() || isAdminEmail();
-      allow delete: if isAdmin() || isAdminEmail();
+      allow write: if isAdmin() || isAdminEmail();
     }
 
-    // Projeler Collection - Admin can manage, all authenticated can read
+    // Projeler Koleksiyonu
     match /projeler/{projeId} {
       allow read: if isSignedIn();
       allow write: if isAdmin() || isAdminEmail();
     }
 
-    // Push Tokens Collection
+    // Push Bildirim Tokenları
     match /push_tokens/{userId} {
       allow read: if isAdmin() || isTechnician();
       allow get, write: if isSignedIn() && isOwner(userId);
