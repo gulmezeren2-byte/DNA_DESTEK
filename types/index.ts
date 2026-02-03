@@ -17,7 +17,7 @@ export interface DNAUser {
     olusturmaTarihi: Date | Timestamp;
     olusturan?: string;
     avatar?: string;
-    pushToken?: string;
+    // pushToken is now stored in push_tokens collection, removed here.
 }
 
 export interface Talep {
@@ -48,7 +48,7 @@ export interface Talep {
     musteriTelefon?: string; // Legacy/Alternative
 
     // Images
-    fotograflar: string[]; // URLs
+    fotograflar: string[]; // Base64
 
     // Comments
     yorumlar?: {

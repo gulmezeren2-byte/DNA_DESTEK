@@ -430,6 +430,24 @@ export default function YeniTalepScreen() {
                     </View>
                 </View>
 
+                <View style={styles.card}>
+                    <View style={styles.sectionHeader}>
+                        <View>
+                            <Text style={[styles.sectionTitle, { color: colors.text }]}>Fotoğraflar</Text>
+                            <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
+                                Maks. 3 adet (Base64)
+                            </Text>
+                        </View>
+                    </View>
+
+                    <View style={[styles.infoBubble, { backgroundColor: isDark ? '#1a3a5c' : '#e3f2fd', marginBottom: 15 }]}>
+                        <Ionicons name="information-circle" size={16} color={colors.primary} />
+                        <Text style={[styles.infoBubbleText, { color: colors.textSecondary, fontSize: 12, marginLeft: 8 }]}>
+                            Firestore belge limiti nedeniyle resimleriniz otomatik sıkıştırılır. Mümkün olduğunca detaylı ve net görseller tercih edin.
+                        </Text>
+                    </View>
+                </View>
+
                 {/* Sorun Detayları */}
                 <View style={[styles.card, { backgroundColor: colors.card }]}>
                     <Text style={[styles.cardTitle, { color: colors.text }]}>📝 Sorun Detayları</Text>
@@ -575,4 +593,8 @@ const styles = StyleSheet.create({
     fotoEkleBtn: { width: 90, height: 90, borderRadius: 12, borderWidth: 2, borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', gap: 6 },
     fotoEkleText: { fontSize: 13, fontWeight: '600' },
     fotoHint: { fontSize: 12, marginTop: 10, fontStyle: 'italic', textAlign: 'center' },
+    sectionTitle: { fontSize: 18, fontWeight: 'bold' },
+    sectionSubtitle: { fontSize: 13, marginTop: 4 },
+    infoBubble: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 12 },
+    infoBubbleText: { flex: 1 },
 });

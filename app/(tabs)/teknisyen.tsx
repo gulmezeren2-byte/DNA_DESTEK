@@ -782,7 +782,7 @@ export default function TeknisyenScreen() {
                         </View>
 
                         <Text style={[styles.cozumFotoHint, { color: colors.textMuted }]}>
-                            📷 En fazla 3 fotoğraf ekleyebilirsiniz (isteğe bağlı)
+                            📷 En fazla 3 fotoğraf (Base64). Firestore limiti için otomatik sıkıştırılır.
                         </Text>
 
                         {/* Butonlar */}

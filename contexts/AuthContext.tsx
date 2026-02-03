@@ -110,6 +110,17 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     // Çıkış fonksiyonu
     const logout = async () => {
         setLoading(true);
+
+        // Logout sırasında push token'ı temizle
+        if (user?.uid) {
+            try {
+                const { deleteDoc, doc } = require('firebase/firestore');
+                await deleteDoc(doc(db, 'push_tokens', user.uid));
+            } catch (err) {
+                console.error('Logout token cleanup error:', err);
+            }
+        }
+
         const result = await logoutUser();
 
         if (result.success) {
