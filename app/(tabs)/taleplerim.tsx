@@ -124,17 +124,21 @@ export default function TaleplerimScreen() {
 
     // Filters based on Tab
     const getFilters = (tab: 'aktif' | 'gecmis') => {
+        const baseFilters: any = {
+            tab: tab,
+        };
+
         if (tab === 'aktif') {
-            return {
-                durumlar: ['yeni', 'atandi', 'islemde', 'beklemede'],
-                tab: 'aktif'
-            };
+            baseFilters.durumlar = ['yeni', 'atandi', 'islemde', 'beklemede'];
         } else {
-            return {
-                durumlar: ['cozuldu', 'iptal', 'kapatildi'],
-                tab: 'gecmis'
-            };
+            baseFilters.durumlar = ['cozuldu', 'iptal', 'kapatildi'];
         }
+
+        if (user?.rol === 'teknisyen' && user?.kategori) {
+            baseFilters.kategori = user.kategori;
+        }
+
+        return baseFilters;
     };
 
     const talepleriYukle = async (isRefresh = false, tab = activeTab) => {

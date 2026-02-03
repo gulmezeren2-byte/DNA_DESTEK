@@ -76,14 +76,17 @@ export const getTalepler = async (
             lastVisible = snapshot.docs[snapshot.docs.length - 1];
 
         } else if (rol === 'teknisyen') {
-            // Team-based model: Filter by atananEkipId
-            // The 'userId' passed here for technicians should preferably be their Team ID (category)
-            // or we need to handle it inside. 
-            // For now, assuming the caller passes the team ID or we adapt the service.
+            // Technician sees:
+            // 1. Tasks assigned to them personally (atananTeknisyenId)
+            // 2. Tasks assigned to their team (atananEkipId or matching category)
+            // 3. New tasks in the pool (status == 'yeni')
+
+            const teamId = filters.kategori || userId; // Fallback to userId if kategori not provided
 
             if (filters.tab === 'gecmis') {
+                // Completed tasks for team or individual
                 const constraints: QueryConstraint[] = [
-                    where('atananEkipId', '==', userId),
+                    where('atananEkipId', '==', teamId),
                     ...buildConstraints(),
                     orderBy('olusturmaTarihi', 'desc')
                 ];
@@ -96,35 +99,55 @@ export const getTalepler = async (
                 lastVisible = snapshot.docs[snapshot.docs.length - 1];
 
             } else {
-                // Aktif Tab (veya filter yoksa default)
-                // İki sorgu: Assigned Active & New Pool
-                // Pagination active tab'de zor olduğu için, ve genelde sayı az olduğu için
-                // pagination'ı "NEW" (yeni) talepler için yapabiliriz veya limit yüksek tutarız.
-
-                // 1. Assigned Active
-                // Not: 'in' query ile durumlar filtresi varsa kullan
+                // Active tasks: Both Team and Individual
                 const activeStatuses = filters.durumlar || ['atandi', 'islemde', 'beklemede'];
-                const qAssigned = query(
+
+                // 1. Assigned to Team
+                const qTeam = query(
                     talesRef,
-                    where('atananTeknisyenId', '==', userId),
-                    where('durum', 'in', activeStatuses), // durumlar filtresi
+                    where('atananEkipId', '==', teamId),
+                    where('durum', 'in', activeStatuses),
                     orderBy('olusturmaTarihi', 'desc')
                 );
 
-                // 2. New (Havuz)
-                // Sadece 'yeni' durumu
-                const qNew = query(talesRef, where('durum', '==', 'yeni'), orderBy('olusturmaTarihi', 'desc'));
+                // 2. Assigned to Individual
+                const qIndividual = query(
+                    talesRef,
+                    where('atananTeknisyenId', '==', userId),
+                    where('durum', 'in', activeStatuses),
+                    orderBy('olusturmaTarihi', 'desc')
+                );
 
-                const [snapAssigned, snapNew] = await Promise.all([getDocs(qAssigned), getDocs(qNew)]);
+                // 3. New (Havuz) - if requested or default
+                let qNew: any = null;
+                if (!filters.durumlar || filters.durumlar.includes('yeni')) {
+                    qNew = query(talesRef, where('durum', '==', 'yeni'), orderBy('olusturmaTarihi', 'desc'), limit(50));
+                }
+
+                const promises = [getDocs(qTeam), getDocs(qIndividual)];
+                if (qNew) promises.push(getDocs(qNew));
+
+                const results = await Promise.all(promises);
+                const snapTeam = results[0];
+                const snapIndiv = results[1];
+                const snapNew = results[2];
 
                 const mergedMap = new Map<string, Talep>();
-                // Önce atananları ekle
-                snapAssigned.docs.forEach(d => mergedMap.set(d.id, { id: d.id, ...d.data() } as Talep));
-
-                // Eğer filtre 'yeni' içeriyorsa (ki active tab içerir) yenileri ekle
-                if (!filters.durumlar || filters.durumlar.includes('yeni')) {
-                    snapNew.docs.forEach(d => mergedMap.set(d.id, { id: d.id, ...d.data() } as Talep));
-                }
+                snapTeam.docs.forEach(d => {
+                    const data = d.data() as Talep;
+                    mergedMap.set(d.id, { ...data, id: d.id });
+                });
+                snapIndiv.docs.forEach(d => {
+                    const data = d.data() as Talep;
+                    mergedMap.set(d.id, { ...data, id: d.id });
+                });
+                if (snapNew) snapNew.docs.forEach(d => {
+                    // Filter pool by category if provided
+                    const data = d.data() as Talep;
+                    if (!filters.kategori || data.kategori === filters.kategori) {
+                        mergedMap.set(d.id, { ...data, id: d.id });
+                    }
+                });
 
                 talepler = Array.from(mergedMap.values()).sort((a, b) => {
                     const da = (a.olusturmaTarihi as any)?.seconds || 0;
@@ -132,9 +155,6 @@ export const getTalepler = async (
                     return db - da;
                 });
 
-                // Teknisyen aktif tab için sonsuz kaydırma geçici olarak devre dışı (veya çok basit implementation)
-                // Çünkü merge edilmiş listede cursor yönetimi zor.
-                // 100 item teknisyen için yeterli olacaktır.
                 lastVisible = null;
             }
 
@@ -204,9 +224,12 @@ export const subscribeToTalepler = (
             unsubscribes.push(unsub);
 
         } else if (rol === 'teknisyen') {
+            const teamId = filters.kategori || userId;
+            const activeStatuses = filters.durumlar || ['atandi', 'islemde', 'beklemede'];
+
             if (filters.tab === 'gecmis') {
                 const constraints: QueryConstraint[] = [
-                    where('atananEkipId', '==', userId),
+                    where('atananEkipId', '==', teamId),
                     ...buildConstraints(),
                     orderBy('olusturmaTarihi', 'desc'),
                     limit(50)
@@ -218,30 +241,39 @@ export const subscribeToTalepler = (
                 }, (error) => callback({ success: false, message: error.message }));
                 unsubscribes.push(unsub);
             } else {
-                const activeStatuses = filters.durumlar || ['atandi', 'islemde', 'beklemede'];
-                const qAssigned = query(
+                // Multiple Listeners for Technician
+                const qTeam = query(
                     talesRef,
-                    where('atananEkipId', '==', userId),
+                    where('atananEkipId', '==', teamId),
                     where('durum', 'in', activeStatuses),
                     orderBy('olusturmaTarihi', 'desc')
                 );
 
-                // 2. New (Havuz) - if applicable
-                // Only if filter doesn't exclude 'yeni'
+                const qIndividual = query(
+                    talesRef,
+                    where('atananTeknisyenId', '==', userId),
+                    where('durum', 'in', activeStatuses),
+                    orderBy('olusturmaTarihi', 'desc')
+                );
+
                 let qNew: any = null;
                 if (!filters.durumlar || filters.durumlar.includes('yeni')) {
                     qNew = query(talesRef, where('durum', '==', 'yeni'), orderBy('olusturmaTarihi', 'desc'), limit(50));
                 }
 
-                // We need to merge results from potential 2 listeners.
-                // This is stateful.
-                let assignedDocs: Talep[] = [];
+                let teamDocs: Talep[] = [];
+                let indivDocs: Talep[] = [];
                 let newDocs: Talep[] = [];
 
                 const mergeAndSend = () => {
                     const mergedMap = new Map<string, Talep>();
-                    assignedDocs.forEach(d => mergedMap.set(d.id, d));
-                    newDocs.forEach(d => mergedMap.set(d.id, d));
+                    teamDocs.forEach(d => mergedMap.set(d.id, d));
+                    indivDocs.forEach(d => mergedMap.set(d.id, d));
+                    newDocs.forEach(d => {
+                        if (!filters.kategori || d.kategori === filters.kategori) {
+                            mergedMap.set(d.id, d);
+                        }
+                    });
 
                     const sorted = Array.from(mergedMap.values()).sort((a, b) => {
                         const da = (a.olusturmaTarihi as any)?.seconds || 0;
@@ -251,18 +283,33 @@ export const subscribeToTalepler = (
                     callback({ success: true, data: sorted, lastVisible: null });
                 };
 
-                const unsub1 = onSnapshot(qAssigned, (snap: QuerySnapshot) => {
-                    assignedDocs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() } as Talep));
+                const unsub1 = onSnapshot(qTeam, (snap: QuerySnapshot) => {
+                    teamDocs = snap.docs.map((d) => {
+                        const data = d.data() as Talep;
+                        return { ...data, id: d.id };
+                    });
                     mergeAndSend();
                 }, (err: Error) => callback({ success: false, message: err.message }));
                 unsubscribes.push(unsub1);
 
+                const unsub2 = onSnapshot(qIndividual, (snap: QuerySnapshot) => {
+                    indivDocs = snap.docs.map((d) => {
+                        const data = d.data() as Talep;
+                        return { ...data, id: d.id };
+                    });
+                    mergeAndSend();
+                }, (err: Error) => console.log("Individual docs error", err));
+                unsubscribes.push(unsub2);
+
                 if (qNew) {
-                    const unsub2 = onSnapshot(qNew, (snap: QuerySnapshot) => {
-                        newDocs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() } as Talep));
+                    const unsub3 = onSnapshot(qNew, (snap: QuerySnapshot) => {
+                        newDocs = snap.docs.map((d) => {
+                            const data = d.data() as Talep;
+                            return { ...data, id: d.id };
+                        });
                         mergeAndSend();
-                    }, (err: Error) => console.log("New docs error", err)); // Fail silently for secondary
-                    unsubscribes.push(unsub2);
+                    }, (err: Error) => console.log("New docs error", err));
+                    unsubscribes.push(unsub3);
                 }
             }
         } else {

@@ -24,6 +24,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { db as dbAny } from '../../firebaseConfig';
 import { sendPushNotification } from '../../services/notificationService';
+// import { uploadTalepImage } from '../../services/storageService'; // Removed for Base64 revert
 import toast from '../../services/toastService';
 import { Talep } from '../../types';
 const db = dbAny as Firestore;
@@ -75,13 +76,13 @@ export default function TeknisyenScreen() {
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
             aspect: [4, 3],
-            quality: 0.5,
+            quality: 0.7,
         });
 
         if (!result.canceled) {
             const manipResult = await ImageManipulator.manipulateAsync(
                 result.assets[0].uri,
-                [{ resize: { width: 600 } }],
+                [{ resize: { width: 800 } }], // Smaller for Base64
                 { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true }
             );
 
@@ -104,13 +105,13 @@ export default function TeknisyenScreen() {
         setIslemYukleniyor(true);
         setYukleniyorFoto(true);
         try {
-            // Fotoğraflar zaten Base64 olarak state'te
-            const cozumFotos = cozumFotograflari;
+            // Reverted to Base64: Use the strings already in state (compressed in pickImage/cozumFotografiSec)
+            const cozumUrls = cozumFotograflari;
 
             await updateDoc(doc(db as Firestore, 'talepler', seciliTalep.id), {
                 durum: 'cozuldu',
                 cozumTarihi: Timestamp.now(),
-                cozumFotograflari: cozumFotos
+                cozumFotograflari: cozumUrls
             });
 
             // Bildirim Gönder. Type check for musteriId since it's now olusturanId in new type but still musteriId in old data
@@ -124,7 +125,7 @@ export default function TeknisyenScreen() {
                 if (musteriDoc.exists()) {
                     const musteriData = musteriDoc.data();
                     if (musteriData?.pushToken) {
-                        const fotoMesaj = cozumFotos.length > 0 ? ' 📸 (Fotoğraflı Çözüm)' : '';
+                        const fotoMesaj = cozumUrls.length > 0 ? ' 📸 (Fotoğraflı Çözüm)' : '';
                         await sendPushNotification(
                             musteriData.pushToken,
                             'Talep Çözüldü ✅',
@@ -348,8 +349,8 @@ export default function TeknisyenScreen() {
             try {
                 const manipulated = await ImageManipulator.manipulateAsync(
                     result.assets[0].uri,
-                    [{ resize: { width: 800 } }],
-                    { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+                    [{ resize: { width: 800 } }], // Smaller for Base64
+                    { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true }
                 );
 
                 if (manipulated.base64) {

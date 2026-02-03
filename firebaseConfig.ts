@@ -46,9 +46,5 @@ try {
   auth = {} as any;
 }
 
-// Helper getter
-export const getAuthInstance = async () => auth;
-export const getAuthSync = () => auth;
-
 export { app, auth, db, firebaseConfig };
 

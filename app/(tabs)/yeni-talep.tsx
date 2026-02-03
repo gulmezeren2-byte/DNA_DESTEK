@@ -197,10 +197,10 @@ export default function YeniTalepScreen() {
     const resmiIsleVeEkle = async (uri: string) => {
         try {
             setResimYukleniyor(true);
-            // Compress heavily to ensure Firestore 1MB limit isn't breached easily
+            // Process image with aggressive compression for Base64 (Firestore 1MB limit)
             const result = await ImageManipulator.manipulateAsync(
                 uri,
-                [{ resize: { width: 600 } }], // Reduced width for safety
+                [{ resize: { width: 800 } }], // Smaller for Base64
                 { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true }
             );
 
@@ -294,14 +294,11 @@ export default function YeniTalepScreen() {
         setYukleniyor(true);
 
         try {
-            // Fotograflar zaten Base64 formatında state'te tutuluyor
-            // Direkt Firestore'a kaydedeceğiz.
-
+            // Reverted to Base64: Directly use the fotograflar array (already compressed Base64 in resmiIsleVeEkle)
             const result = await createTalep({
                 olusturanId: user?.uid!,
                 olusturanAd: `${user?.ad} ${user?.soyad}`,
                 olusturanTelefon: telefon,
-                // Backward compatibility if needed:
                 musteriAdi: `${user?.ad} ${user?.soyad}`,
                 musteriTelefon: telefon,
 
@@ -311,7 +308,7 @@ export default function YeniTalepScreen() {
                 kategori: seciliKategori,
                 baslik: sorunBasligi,
                 aciklama: aciklama,
-                fotograflar: fotograflar, // Base64 array
+                fotograflar: fotograflar, // Already Base64
                 oncelik: 'normal',
             });
 

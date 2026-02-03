@@ -65,8 +65,10 @@ service cloud.firestore {
       allow update: if isSignedIn() && (
         isAdmin() || 
         (isTechnician() && (resource.data.atananTeknisyenId == request.auth.uid || resource.data.durum == 'atandi')) ||
-        (resource.data.olusturanId == request.auth.uid && resource.data.durum == 'yeni' && 
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['baslik', 'aciklama', 'fotograflar', 'guncellemeTarihi']))
+        (resource.data.olusturanId == request.auth.uid && (
+          (resource.data.durum == 'yeni' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['baslik', 'aciklama', 'fotograflar', 'guncellemeTarihi'])) ||
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['puan', 'degerlendirme', 'degerlendirmeTarihi']))
+        ))
       );
     }
 
@@ -82,6 +84,12 @@ service cloud.firestore {
     match /projeler/{projeId} {
       allow read: if isSignedIn();
       allow write: if isAdmin() || isAdminEmail();
+    }
+
+    // Push Tokens Collection
+    match /push_tokens/{userId} {
+      allow read: if isAdmin();
+      allow get, write: if isSignedIn() && isOwner(userId);
     }
   }
 }
