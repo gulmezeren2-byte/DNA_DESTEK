@@ -117,7 +117,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
                 const { deleteDoc, doc } = require('firebase/firestore');
                 await deleteDoc(doc(db, 'push_tokens', user.uid));
             } catch (err) {
-                console.error('Logout token cleanup error:', err);
+                console.warn('Logout token cleanup error (silent):', err);
+                // Silent toast if needed, but we don't want to block logout
+                const toast = require('../services/toastService').default;
+                toast.error('Oturum kapatılırken bildirim kaydı temizlenemedi.');
             }
         }
 

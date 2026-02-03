@@ -24,6 +24,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getProjeler } from '../../services/ekipService';
 import { createTalep } from '../../services/talepService';
+import toast from '../../services/toastService';
 
 // Dropdown bileşeni
 interface DropdownProps {
@@ -205,6 +206,13 @@ export default function YeniTalepScreen() {
             );
 
             if (result.base64) {
+                // Size check: Base64 is ~1.37x larger than binary. 1MB limit = ~1.3MB string.
+                // We aim for < 300KB per photo to be safe.
+                const sizeKB = Math.round((result.base64.length * 3) / 4 / 1024);
+                if (sizeKB > 500) {
+                    toast.warning(`Resim boyutu biraz yüksek (${sizeKB}KB). Firestore limitine takılabilir.`);
+                }
+
                 const base64Uri = `data:image/jpeg;base64,${result.base64}`;
                 setFotograflar([...fotograflar, base64Uri]);
             }
@@ -430,23 +438,6 @@ export default function YeniTalepScreen() {
                     </View>
                 </View>
 
-                <View style={styles.card}>
-                    <View style={styles.sectionHeader}>
-                        <View>
-                            <Text style={[styles.sectionTitle, { color: colors.text }]}>Fotoğraflar</Text>
-                            <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
-                                Maks. 3 adet (Base64)
-                            </Text>
-                        </View>
-                    </View>
-
-                    <View style={[styles.infoBubble, { backgroundColor: isDark ? '#1a3a5c' : '#e3f2fd', marginBottom: 15 }]}>
-                        <Ionicons name="information-circle" size={16} color={colors.primary} />
-                        <Text style={[styles.infoBubbleText, { color: colors.textSecondary, fontSize: 12, marginLeft: 8 }]}>
-                            Firestore belge limiti nedeniyle resimleriniz otomatik sıkıştırılır. Mümkün olduğunca detaylı ve net görseller tercih edin.
-                        </Text>
-                    </View>
-                </View>
 
                 {/* Sorun Detayları */}
                 <View style={[styles.card, { backgroundColor: colors.card }]}>
@@ -461,6 +452,14 @@ export default function YeniTalepScreen() {
                     />
 
                     <Text style={[styles.label, { color: colors.textSecondary }]}>Fotoğraf Ekle (Opsiyonel)</Text>
+
+                    <View style={[styles.infoBubble, { backgroundColor: isDark ? '#1a3a5c' : '#e3f2fd', marginBottom: 12 }]}>
+                        <Ionicons name="information-circle-outline" size={16} color={colors.primary} />
+                        <Text style={[styles.infoBubbleText, { color: colors.textSecondary, fontSize: 11, marginLeft: 6 }]}>
+                            Resimler Base64 formatında kaydedilir. Firestore limiti (1MB) nedeniyle maks. 3 adet ve otomatik sıkıştırma uygulanır.
+                        </Text>
+                    </View>
+
                     <View style={styles.fotoContainer}>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.fotoList}>
                             {fotograflar.map((foto, index) => (
@@ -493,7 +492,7 @@ export default function YeniTalepScreen() {
                             )}
                         </ScrollView>
                         <Text style={[styles.fotoHint, { color: colors.textMuted }]}>
-                            En fazla 3 fotoğraf ekleyebilirsiniz. (Max 800px)
+                            En fazla 3 fotoğraf ekleyebilirsiniz. (Otomatik Optimizasyon)
                         </Text>
                     </View>
 

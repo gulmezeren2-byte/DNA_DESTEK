@@ -86,6 +86,12 @@ export default function TeknisyenScreen() {
             );
 
             if (manipResult.base64) {
+                // Size check
+                const sizeKB = Math.round((manipResult.base64.length * 3) / 4 / 1024);
+                if (sizeKB > 500) {
+                    toast.warning(`Resim boyutu biraz yüksek (${sizeKB}KB).`);
+                }
+
                 const base64Uri = `data:image/jpeg;base64,${manipResult.base64}`;
                 setCozumFotograflari([...cozumFotograflari, base64Uri]);
             }
@@ -781,9 +787,12 @@ export default function TeknisyenScreen() {
                             )}
                         </View>
 
-                        <Text style={[styles.cozumFotoHint, { color: colors.textMuted }]}>
-                            📷 En fazla 3 fotoğraf (Base64). Firestore limiti için otomatik sıkıştırılır.
-                        </Text>
+                        <View style={[styles.infoBubble, { backgroundColor: isDark ? '#1a3a5c' : '#e8f5e9', marginBottom: 15, padding: 10 }]}>
+                            <Ionicons name="information-circle-outline" size={16} color={colors.primary} />
+                            <Text style={[styles.infoBubbleText, { color: colors.textSecondary, fontSize: 11, marginLeft: 6 }]}>
+                                Resimler Base64 formatında ve otomatik sıkıştırılmış olarak kaydedilir (Maks 1MB toplam limit).
+                            </Text>
+                        </View>
 
                         {/* Butonlar */}
                         <View style={styles.cozumButonlar}>
@@ -986,5 +995,7 @@ const styles = StyleSheet.create({
     cozumIptal: { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1.5, alignItems: 'center' },
     cozumIptalText: { fontSize: 15, fontWeight: '600' },
     cozumOnayla: { flex: 2, flexDirection: 'row', padding: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 8 },
-    cozumOnaylaText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+    cozumOnaylaText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+    infoBubble: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 12 },
+    infoBubbleText: { flex: 1, fontSize: 12 },
 });
