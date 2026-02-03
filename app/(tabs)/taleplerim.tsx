@@ -347,36 +347,6 @@ export default function TaleplerimScreen() {
             try {
                 await updateTalepDurum(seciliTalep.id, 'iptal');
 
-                // Adminlere bildirim gönder
-                try {
-                    const { collection, query, where, getDocs, getDoc, doc } = require('firebase/firestore');
-                    const { db } = require('../../firebaseConfig');
-                    const { sendPushNotification } = require('../../services/notificationService');
-
-                    const adminQuery = query(collection(db, 'users'), where('rol', '==', 'yonetim'));
-                    const adminSnaps = await getDocs(adminQuery);
-
-                    adminSnaps.forEach(async (adminDoc: any) => {
-                        try {
-                            const tokenDoc = await getDoc(doc(db, 'push_tokens', adminDoc.id));
-                            if (tokenDoc.exists()) {
-                                const tokenData = tokenDoc.data();
-                                if (tokenData?.token) {
-                                    sendPushNotification(
-                                        tokenData.token,
-                                        'Talep İptal Edildi 🚫',
-                                        `${seciliTalep.projeAdi}: ${seciliTalep.baslik}`
-                                    );
-                                }
-                            }
-                        } catch (err) {
-                            console.error('Admin token fetch error:', err);
-                        }
-                    });
-                } catch (notiError) {
-                    console.error('Admin bildirim hatası:', notiError);
-                }
-
                 toast.success('Talep iptal edildi');
                 setDetayModalVisible(false);
                 talepleriYukle();
@@ -403,36 +373,6 @@ export default function TaleplerimScreen() {
         try {
             const result = await puanlaTalep(seciliTalep.id, secilenPuan, yorum);
             if (result.success) {
-                // Bildirim Gönder (Sadece Adminlere)
-                try {
-                    const { collection, query, where, getDocs, getDoc, doc } = require('firebase/firestore');
-                    const { db } = require('../../firebaseConfig');
-                    const { sendPushNotification } = require('../../services/notificationService');
-
-                    // Adminlere bildirim
-                    const adminQuery = query(collection(db, 'users'), where('rol', '==', 'yonetim'));
-                    const adminSnaps = await getDocs(adminQuery);
-                    adminSnaps.forEach(async (adminDoc: any) => {
-                        try {
-                            const tokenDoc = await getDoc(doc(db, 'push_tokens', adminDoc.id));
-                            if (tokenDoc.exists()) {
-                                const tokenData = tokenDoc.data();
-                                if (tokenData?.token) {
-                                    sendPushNotification(
-                                        tokenData.token,
-                                        'Talep Puanlandı ⭐',
-                                        `${secilenPuan} Yıldız - ${seciliTalep.projeAdi}`
-                                    );
-                                }
-                            }
-                        } catch (err) {
-                            console.error('Admin token fetch error:', err);
-                        }
-                    });
-                } catch (notiError) {
-                    console.error('Puan bildirim hatası:', notiError);
-                }
-
                 toast.success('Değerlendirmeniz için teşekkürler! ⭐');
                 setPuanModalVisible(false);
                 setDetayModalVisible(false);

@@ -120,13 +120,13 @@ export default function TeknisyenScreen() {
 
             const targetUserId = seciliTalep.olusturanId || (seciliTalep as any).musteriId;
             if (targetUserId) {
-                const musteriDoc = await getDoc(doc(db as Firestore, 'users', targetUserId));
-                if (musteriDoc.exists()) {
-                    const musteriData = musteriDoc.data();
-                    if (musteriData?.pushToken) {
+                const tokenDoc = await getDoc(doc(db as Firestore, 'push_tokens', targetUserId));
+                if (tokenDoc.exists()) {
+                    const tokenData = tokenDoc.data();
+                    if (tokenData?.token) {
                         const fotoMesaj = cozumUrls.length > 0 ? ' 📸 (Fotoğraflı Çözüm)' : '';
                         await sendPushNotification(
-                            musteriData.pushToken,
+                            tokenData.token,
                             'Talep Çözüldü ✅',
                             `Sayın ${seciliTalep.musteriAdi || seciliTalep.olusturanAd}, talebiniz çözüldü olarak işaretlendi.${fotoMesaj}`
                         );

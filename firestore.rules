@@ -92,7 +92,7 @@ service cloud.firestore {
 
     // Push Tokens Collection
     match /push_tokens/{userId} {
-      allow read: if isAdmin();
+      allow read: if isAdmin() || isTechnician();
       allow get, write: if isSignedIn() && isOwner(userId);
     }
   }

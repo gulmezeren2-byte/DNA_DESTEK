@@ -220,12 +220,12 @@ export default function YonetimScreen() {
             const targetUserId = seciliTalep.olusturanId;
             if (targetUserId) {
                 try {
-                    const musteriDoc = await getDoc(doc(db, 'users', targetUserId));
-                    if (musteriDoc.exists()) {
-                        const musteriData = musteriDoc.data();
-                        if (musteriData?.pushToken) {
+                    const tokenDoc = await getDoc(doc(db, 'push_tokens', targetUserId));
+                    if (tokenDoc.exists()) {
+                        const tokenData = tokenDoc.data();
+                        if (tokenData?.token) {
                             await sendPushNotification(
-                                musteriData.pushToken,
+                                tokenData.token,
                                 'Ekip Atandı 🛠️',
                                 `Sayın ${seciliTalep.musteriAdi || seciliTalep.olusturanAd || 'Müşteri'}, talebiniz için ${ekip.ad} atandı.`
                             );
@@ -242,12 +242,12 @@ export default function YonetimScreen() {
                     // Tüm üyelerin push tokenlarını çek ve bildirim gönder
                     ekip.uyeler.forEach(async (memberId) => {
                         try {
-                            const memberDoc = await getDoc(doc(db, 'users', memberId));
-                            if (memberDoc.exists()) {
-                                const memberData = memberDoc.data();
-                                if (memberData?.pushToken) {
+                            const tokenDoc = await getDoc(doc(db, 'push_tokens', memberId));
+                            if (tokenDoc.exists()) {
+                                const tokenData = tokenDoc.data();
+                                if (tokenData?.token) {
                                     await sendPushNotification(
-                                        memberData.pushToken,
+                                        tokenData.token,
                                         'Yeni Görev Atandı 📋',
                                         `${seciliTalep.projeAdi}: ${seciliTalep.baslik}`
                                     );
