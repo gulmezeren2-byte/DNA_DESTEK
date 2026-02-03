@@ -24,7 +24,6 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { db as dbAny } from '../../firebaseConfig';
 import { sendPushNotification } from '../../services/notificationService';
-// import { uploadTalepImage } from '../../services/storageService'; // Removed for Base64 revert
 import toast from '../../services/toastService';
 import { Talep } from '../../types';
 const db = dbAny as Firestore;

@@ -1,24 +1,8 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Images for tickets: /talep-images/{talepId}/{fileName}
-    match /talep-images/{talepId}/{fileName} {
-      allow read: if request.auth != null && (
-        firestore.get(/databases/(default)/documents/talepler/$(talepId)).data.olusturanId == request.auth.uid ||
-        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.rol in ['yonetim', 'teknisyen']
-      );
-      allow write: if request.auth != null 
-                   && request.resource.size < 5 * 1024 * 1024 
-                   && request.resource.contentType.matches('image/.*')
-                   && (
-                     firestore.get(/databases/(default)/documents/talepler/$(talepId)).data.olusturanId == request.auth.uid ||
-                     firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.rol in ['yonetim', 'teknisyen']
-                   );
-    }
-    
-    // Default fallback
     match /{allPaths=**} {
-      allow read, write: if false; // Deny all other paths by default for security
+      allow read, write: if false;
     }
   }
 }
