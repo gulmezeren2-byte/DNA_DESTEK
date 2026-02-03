@@ -24,35 +24,39 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
 
-    // Kullanıcılar Koleksiyonu
+    // =====================
+    // KULLANICILAR (users)
+    // =====================
     match /users/{userId} {
-      // Oku: Kişi kendi profilini, Admin/Teknisyen ise ilgili profilleri görebilir.
+      // Okuma: Kendi profilini herkes, Admin/Teknisyen belirli profilleri görebilir.
       allow get: if isSignedIn() && (isOwner(userId) || isAdmin() || isTechnician());
       
-      // Listele: Sadece yöneticiler tüm kullanıcıları listeleyebilir (Gizlilik Gereği).
+      // Listeleme: Sadece yöneticiler (gizlilik gereği teknisyenler listeleyemez).
       allow list: if isAdmin();
       
-      // Oluştur: 
-      // - Standart kullanıcılar sadece 'musteri' rolüyle kaydolabilir.
-      // - Beyaz listedeki e-postalar 'yonetim' olarak kaydolabilir.
-      allow create: if isSignedIn() && isOwner(userId) && (
-        request.resource.data.rol == 'musteri' || 
-        (request.resource.data.rol == 'yonetim' && isAdminEmail())
+      // Oluşturma (TEK KURAL - Konsolide):
+      // - Admin herhangi bir kullanıcı oluşturabilir (Yönetim paneli).
+      // - Kullanıcı kendi profilini oluşturabilir: sadece 'musteri' veya whitelist'teyse 'yonetim'.
+      allow create: if isAdmin() || (
+        isSignedIn() && isOwner(userId) && (
+          request.resource.data.rol == 'musteri' || 
+          (request.resource.data.rol == 'yonetim' && isAdminEmail())
+        )
       );
       
-      // Güncelle: Admin her şeyi yapabilir. Kullanıcı sadece kendi bilgilerini güncelleyebilir (Rol/Aktiflik hariç).
+      // Güncelleme: Admin herkesin bilgisini güncelleyebilir. 
+      // Kullanıcı kendi bilgilerini güncelleyebilir (rol/aktiflik değiştiremez).
       allow update: if isAdmin() || (isOwner(userId) && (
         request.resource.data.rol == resource.data.rol && 
         request.resource.data.aktif == resource.data.aktif
       ));
-      
-      // Yönetim paneli üzerinden kullanıcı oluşturma
-      allow create: if isAdmin();
     }
 
-    // Talepler Koleksiyonu
+    // =====================
+    // TALEPLER (talepler)
+    // =====================
     match /talepler/{talepId} {
-      // Okuma Kısıtı: Yönetici her şeyi, Teknisyen sadece atanmış işleri görür. Müşteri kendi işini görür.
+      // Okuma: Yönetici her şeyi, Teknisyen sadece atanmış işleri, Müşteri kendi işini görür.
       allow read: if isSignedIn() && (
         isAdmin() || 
         (isTechnician() && (
@@ -90,19 +94,27 @@ service cloud.firestore {
       );
     }
 
-    // Ekipler Koleksiyonu
+    // =====================
+    // EKİPLER (ekipler)
+    // =====================
     match /ekipler/{ekipId} {
       allow read: if isSignedIn() && (isAdmin() || isTechnician());
-      allow write: if isAdmin() || isAdminEmail();
+      allow create: if isAdmin() || isAdminEmail();
+      allow update: if isAdmin() || isAdminEmail();
+      allow delete: if isAdmin() || isAdminEmail();
     }
 
-    // Projeler Koleksiyonu
+    // =====================
+    // PROJELER (projeler)
+    // =====================
     match /projeler/{projeId} {
       allow read: if isSignedIn();
       allow write: if isAdmin() || isAdminEmail();
     }
 
-    // Push Bildirim Tokenları
+    // =====================
+    // PUSH TOKENLARI (push_tokens)
+    // =====================
     match /push_tokens/{userId} {
       allow read: if isAdmin() || isTechnician();
       allow get, write: if isSignedIn() && isOwner(userId);
