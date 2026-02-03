@@ -26,9 +26,10 @@ service cloud.firestore {
 
     // Users Collection
     match /users/{userId} {
-      // Read: Owner can see own profile. Admin/Tech can see all (for management/assignment).
+      // Read: Owner can see own profile. Admin/Tech can see specific profiles.
       allow get: if isSignedIn() && (isOwner(userId) || isAdmin() || isTechnician());
-      allow list: if isAdmin() || isTechnician();
+      // List: Only Admins can list all users (Technicians restricted for privacy)
+      allow list: if isAdmin();
       
       // Create: Owner can create own profile.
       // Must validate Role: 
@@ -52,9 +53,13 @@ service cloud.firestore {
 
     // Talepler Collection
     match /talepler/{talepId} {
+      // Read: Admins see all. Technicians see ONLY assigned tickets. Customers see their own.
       allow read: if isSignedIn() && (
         isAdmin() || 
-        isTechnician() || 
+        (isTechnician() && (
+          resource.data.atananTeknisyenId == request.auth.uid || 
+          resource.data.atananEkipId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kategori
+        )) ||
         resource.data.olusturanId == request.auth.uid ||
         resource.data.musteriId == request.auth.uid
       );
@@ -64,14 +69,20 @@ service cloud.firestore {
         request.resource.data.oncelik in ['normal', 'acil'];
       allow update: if isSignedIn() && (
         isAdmin() || 
+        // Technician: Can update status, solution, and comments on assigned tickets
         (isTechnician() && (
           (resource.data.atananTeknisyenId == request.auth.uid || 
            resource.data.atananEkipId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kategori) &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['durum', 'cozumTarihi', 'cozumFotograflari', 'guncellemeTarihi'])
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['durum', 'cozumTarihi', 'cozumFotograflari', 'guncellemeTarihi', 'yorumlar'])
         )) ||
+        // Customer: Can edit own ticket if 'yeni', or rate if 'cozuldu'
         (resource.data.olusturanId == request.auth.uid && (
+          // Edit only when status is 'yeni'
           (resource.data.durum == 'yeni' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['baslik', 'aciklama', 'fotograflar', 'guncellemeTarihi'])) ||
-          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['puan', 'degerlendirme', 'degerlendirmeTarihi']))
+          // Cancel only when status is 'yeni'
+          (resource.data.durum == 'yeni' && request.resource.data.durum == 'iptal' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['durum', 'guncellemeTarihi'])) ||
+          // Rate only when status is 'cozuldu'
+          (resource.data.durum == 'cozuldu' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['puan', 'degerlendirme', 'degerlendirmeTarihi']))
         ))
       );
     }

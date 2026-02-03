@@ -150,6 +150,8 @@ export const APP_CONFIG = {
     PHOTO_MAX_WIDTH: 800,
     PHOTO_QUALITY: 0.7,
     PHOTO_COMPRESS: 0.6,
+    // NOTE: Firestore rules (isAdminEmail function) is the SOURCE OF TRUTH for admin access.
+    // This client-side list is for UI hints only and should be kept in sync manually.
     ADMIN_EMAILS: ['admin@dnadestek.com', 'eren.gulmez@dnadestek.com'] as string[],
 } as const;
 
