@@ -51,7 +51,6 @@ export async function registerForPushNotificationsAsync() {
                 projectId,
             });
             token = tokenData.data;
-            console.log('Push Token:', token);
         } catch (e) {
             console.error('Push Token alma hatası:', e);
         }

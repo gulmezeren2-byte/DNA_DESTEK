@@ -64,7 +64,11 @@ service cloud.firestore {
         request.resource.data.oncelik in ['normal', 'acil'];
       allow update: if isSignedIn() && (
         isAdmin() || 
-        (isTechnician() && (resource.data.atananTeknisyenId == request.auth.uid || resource.data.durum == 'atandi')) ||
+        (isTechnician() && (
+          (resource.data.atananTeknisyenId == request.auth.uid || 
+           resource.data.atananEkipId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kategori) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['durum', 'cozumTarihi', 'cozumFotograflari', 'guncellemeTarihi'])
+        )) ||
         (resource.data.olusturanId == request.auth.uid && (
           (resource.data.durum == 'yeni' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['baslik', 'aciklama', 'fotograflar', 'guncellemeTarihi'])) ||
           (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['puan', 'degerlendirme', 'degerlendirmeTarihi']))

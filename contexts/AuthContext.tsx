@@ -70,7 +70,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
                             token: token,
                             updatedAt: new Date()
                         }, { merge: true });
-                        console.log('Push Token kaydedildi (private collection):', token);
                     }
                 } catch (error) {
                     console.error('Push Token kayıt hatası:', error);
@@ -92,15 +91,19 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         setLoading(true);
         setError(null);
 
-        const result = await loginUser(email, password);
+        try {
+            const result = await loginUser(email, password);
 
-        if (result.success && result.data?.user) {
-            setUser(result.data.user);
-            return { success: true, user: result.data.user };
-        } else {
-            const msg = result.message || 'Giriş başarısız';
-            setError(msg);
-            return { success: false, message: msg };
+            if (result.success && result.data?.user) {
+                setUser(result.data.user);
+                return { success: true, user: result.data.user };
+            } else {
+                const msg = result.message || 'Giriş başarısız';
+                setError(msg);
+                return { success: false, message: msg };
+            }
+        } finally {
+            setLoading(false);
         }
     };
 

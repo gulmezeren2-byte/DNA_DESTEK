@@ -11,8 +11,6 @@ service firebase.storage {
                    && request.resource.size < 5 * 1024 * 1024 
                    && request.resource.contentType.matches('image/.*')
                    && (
-                     // If record exists, must be owner/admin/tech
-                     !exists(/databases/(default)/documents/talepler/$(talepId)) ||
                      firestore.get(/databases/(default)/documents/talepler/$(talepId)).data.olusturanId == request.auth.uid ||
                      firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.rol in ['yonetim', 'teknisyen']
                    );

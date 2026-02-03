@@ -314,35 +314,8 @@ export default function YeniTalepScreen() {
 
 
             if (result.success) {
-                // Adminlere bildirim gönder
-                try {
-                    const { collection, query, where, getDocs, getDoc, doc } = require('firebase/firestore');
-                    const { db } = require('../../firebaseConfig');
-                    const { sendPushNotification } = require('../../services/notificationService');
-
-                    const adminQuery = query(collection(db, 'users'), where('rol', '==', 'yonetim'));
-                    const adminSnaps = await getDocs(adminQuery);
-
-                    adminSnaps.forEach(async (adminDoc: any) => {
-                        try {
-                            const tokenDoc = await getDoc(doc(db, 'push_tokens', adminDoc.id));
-                            if (tokenDoc.exists()) {
-                                const tokenData = tokenDoc.data();
-                                if (tokenData?.token) {
-                                    await sendPushNotification(
-                                        tokenData.token,
-                                        'Yeni Destek Talebi 🆕',
-                                        `${seciliProje} - ${seciliKategori}: ${sorunBasligi}`
-                                    );
-                                }
-                            }
-                        } catch (err) {
-                            console.error('Admin token fetch error:', err);
-                        }
-                    });
-                } catch (notiError) {
-                    console.error('Admin bildirim hatası:', notiError);
-                }
+                // Adminlere bildirim gönder (Client-side notification removed due to security rules)
+                // Admins should monitor the pool or use cloud functions for notifications.
 
                 Platform.OS === 'web'
                     ? alert('✅ Destek talebiniz başarıyla oluşturuldu!')
