@@ -28,6 +28,74 @@ import { Talep } from '../../types';
 
 
 
+
+
+const durumConfig: Record<string, { label: string; bg: string; text: string; bgDark: string; textDark: string; icon: string; message: string }> = {
+    yeni: {
+        label: 'Yeni',
+        bg: '#e3f2fd',
+        text: '#1565c0',
+        bgDark: '#1a3a5c',
+        textDark: '#90caf9',
+        icon: 'flash',
+        message: 'Talebiniz alındı, yakında bir ekibe atanacak.'
+    },
+    atandi: {
+        label: 'Atandı',
+        bg: '#e0f7fa',
+        text: '#006064',
+        bgDark: '#004d40',
+        textDark: '#80deea',
+        icon: 'people',
+        message: 'Teknisyen ataması yapıldı.'
+    },
+    islemde: {
+        label: 'İşlemde',
+        bg: '#fff3e0',
+        text: '#e65100',
+        bgDark: '#3e2723',
+        textDark: '#ffcc80',
+        icon: 'construct',
+        message: 'Ekibimiz şu an talep üzerinde çalışıyor.'
+    },
+    beklemede: {
+        label: 'Beklemede',
+        bg: '#f3e5f5',
+        text: '#7b1fa2',
+        bgDark: '#4a148c',
+        textDark: '#ce93d8',
+        icon: 'hourglass',
+        message: 'Parça veya onay bekleniyor.'
+    },
+    cozuldu: {
+        label: 'Çözüldü',
+        bg: '#e8f5e9',
+        text: '#2e7d32',
+        bgDark: '#1b5e20',
+        textDark: '#a5d6a7',
+        icon: 'checkmark-circle',
+        message: 'İşlem başarıyla tamamlandı.'
+    },
+    iptal: {
+        label: 'İptal',
+        bg: '#ffebee',
+        text: '#c62828',
+        bgDark: '#b71c1c',
+        textDark: '#ef9a9a',
+        icon: 'close-circle',
+        message: 'Talep iptal edildi.'
+    },
+    kapatildi: {
+        label: 'Kapatıldı',
+        bg: '#eceff1',
+        text: '#455a64',
+        bgDark: '#263238',
+        textDark: '#b0bec5',
+        icon: 'lock-closed',
+        message: 'Talep kapatıldı.'
+    }
+};
+
 export default function TaleplerimScreen() {
     const { user, logout } = useAuth();
     const { isDark, colors } = useTheme();
@@ -267,6 +335,30 @@ export default function TaleplerimScreen() {
             setIptalYukleniyor(true);
             try {
                 await updateTalepDurum(seciliTalep.id, 'iptal');
+
+                // Adminlere bildirim gönder
+                try {
+                    const { collection, query, where, getDocs } = require('firebase/firestore');
+                    const { db } = require('../../firebaseConfig');
+                    const { sendPushNotification } = require('../../services/notificationService');
+
+                    const adminQuery = query(collection(db, 'users'), where('rol', '==', 'yonetim'));
+                    const adminSnaps = await getDocs(adminQuery);
+
+                    adminSnaps.forEach((doc: any) => {
+                        const adminData = doc.data();
+                        if (adminData.pushToken) {
+                            sendPushNotification(
+                                adminData.pushToken,
+                                'Talep İptal Edildi 🚫',
+                                `${seciliTalep.projeAdi}: ${seciliTalep.baslik}`
+                            );
+                        }
+                    });
+                } catch (notiError) {
+                    console.error('Admin bildirim hatası:', notiError);
+                }
+
                 toast.success('Talep iptal edildi');
                 setDetayModalVisible(false);
                 talepleriYukle();
@@ -293,6 +385,29 @@ export default function TaleplerimScreen() {
         try {
             const result = await puanlaTalep(seciliTalep.id, secilenPuan, yorum);
             if (result.success) {
+                // Bildirim Gönder (Sadece Adminlere)
+                try {
+                    const { collection, query, where, getDocs } = require('firebase/firestore');
+                    const { db } = require('../../firebaseConfig');
+                    const { sendPushNotification } = require('../../services/notificationService');
+
+                    // Adminlere bildirim
+                    const adminQuery = query(collection(db, 'users'), where('rol', '==', 'yonetim'));
+                    const adminSnaps = await getDocs(adminQuery);
+                    adminSnaps.forEach((doc: any) => {
+                        const adminData = doc.data();
+                        if (adminData.pushToken) {
+                            sendPushNotification(
+                                adminData.pushToken,
+                                'Talep Puanlandı ⭐',
+                                `${secilenPuan} Yıldız - ${seciliTalep.projeAdi}`
+                            );
+                        }
+                    });
+                } catch (notiError) {
+                    console.error('Puan bildirim hatası:', notiError);
+                }
+
                 toast.success('Değerlendirmeniz için teşekkürler! ⭐');
                 setPuanModalVisible(false);
                 setDetayModalVisible(false);

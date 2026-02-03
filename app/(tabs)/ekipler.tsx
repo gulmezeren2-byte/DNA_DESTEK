@@ -201,10 +201,10 @@ export default function EkiplerScreen() {
         const result = await createDefaultEkipler();
 
         if (result.success) {
-            toast.success(result.message);
+            toast.success(result.message || '');
             verileriYukle();
         } else {
-            toast.error(result.message);
+            toast.error(result.message || '');
         }
         setIslemYukleniyor(false);
     };

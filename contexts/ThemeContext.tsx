@@ -48,6 +48,7 @@ const darkColors = {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
+    console.log("🎨 ThemeProvider Rendering...");
     const systemColorScheme = useSystemColorScheme();
     const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
     const [isLoaded, setIsLoaded] = useState(false);

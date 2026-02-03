@@ -139,13 +139,16 @@ export const getTalepler = async (
             }
 
         } else {
-            // Yönetim
-            const constraints: QueryConstraint[] = [orderBy("olusturmaTarihi", "desc")];
+            // Yönetim - WHERE clauses BEFORE orderBy
+            const constraints: QueryConstraint[] = [];
 
             if (filters.durum) constraints.push(where('durum', '==', filters.durum));
             if (filters.durumlar) constraints.push(where('durum', 'in', filters.durumlar));
             if (filters.oncelik) constraints.push(where('oncelik', '==', filters.oncelik));
             if (filters.atanmamis) constraints.push(where('durum', '==', 'yeni'));
+
+            // orderBy comes AFTER where clauses
+            constraints.push(orderBy("olusturmaTarihi", "desc"));
 
             if (lastDoc) constraints.push(startAfter(lastDoc));
             constraints.push(limit(pageSize));
@@ -267,18 +270,27 @@ export const subscribeToTalepler = (
             }
         } else {
             // Yönetim
-            const constraints: QueryConstraint[] = [orderBy('olusturmaTarihi', 'desc')];
+            const constraints: QueryConstraint[] = [];
+
+            // WHERE clauses must come BEFORE orderBy
             if (filters.durum) constraints.push(where('durum', '==', filters.durum));
             if (filters.durumlar) constraints.push(where('durum', 'in', filters.durumlar));
             if (filters.oncelik) constraints.push(where('oncelik', '==', filters.oncelik));
             if (filters.atanmamis) constraints.push(where('durum', '==', 'yeni'));
 
+            // orderBy comes AFTER where clauses
+            constraints.push(orderBy('olusturmaTarihi', 'desc'));
             constraints.push(limit(50));
+
+            console.log('🔍 Yönetim Filter Query:', { filters, constraintCount: constraints.length });
+
             const q = query(talesRef, ...constraints);
             const unsub = onSnapshot(q, (snapshot) => {
+                console.log('📊 Yönetim data received:', snapshot.docs.length, 'items');
                 const talepler = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Talep));
                 callback({ success: true, data: talepler, lastVisible: snapshot.docs[snapshot.docs.length - 1] });
             }, (error) => {
+                console.error('❌ Yönetim snapshot error:', error);
                 callback({ success: false, message: error.message });
             });
             unsubscribes.push(unsub);

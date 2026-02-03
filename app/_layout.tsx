@@ -42,11 +42,12 @@ function AuthNavigator() {
 
     const inAuthGroup = segments[0] === 'login';
     const inTabs = segments[0] === '(tabs)';
+    const inRoot = (segments as string[]).length === 0;
 
     if (!isAuthenticated && !inAuthGroup) {
       router.replace('/login');
       hasNavigated.current = false;
-    } else if (isAuthenticated && inAuthGroup) {
+    } else if (isAuthenticated && (inAuthGroup || inRoot)) {
       // Rol bazlı yönlendirme
       if (isTeknisyen) {
         router.replace('/(tabs)/teknisyen');
@@ -83,6 +84,7 @@ function AuthNavigator() {
   return (
     <NavigationThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
       <Stack>
+        <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
@@ -93,6 +95,7 @@ function AuthNavigator() {
 }
 
 export default function RootLayout() {
+  console.log("🏠 RootLayout Rendering...");
   return (
     <ThemeProvider>
       <AuthProvider>

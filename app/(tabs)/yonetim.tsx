@@ -56,8 +56,17 @@ export default function YonetimScreen() {
     const [atamaModalVisible, setAtamaModalVisible] = useState(false);
     const [islemYukleniyor, setIslemYukleniyor] = useState(false);
     const [filtre, setFiltre] = useState<'hepsi' | 'yeni' | 'atanmamis' | 'acil'>('hepsi');
+    const [zamanFiltre, setZamanFiltre] = useState<'hepsi' | 'bugun' | 'buHafta' | 'buAy'>('hepsi');
     const [aramaMetni, setAramaMetni] = useState('');
     const [tamEkranFoto, setTamEkranFoto] = useState<string | null>(null);
+
+    // Date helper for time-based filtering
+    const getTalepDate = (timestamp: any): Date | null => {
+        if (!timestamp) return null;
+        if (timestamp.toDate) return timestamp.toDate();
+        if (timestamp.seconds) return new Date(timestamp.seconds * 1000);
+        return new Date(timestamp);
+    };
 
     // Derived State: Merge Head + Tail deterministically
     // Logic: Head is truth. Tail items that exist in Head are filtered out.
@@ -116,7 +125,12 @@ export default function YonetimScreen() {
 
     // Realtime Subscription Effect
     useEffect(() => {
-        if (!user) return;
+        console.log('🔄 useEffect triggered - user:', user?.id, 'rol:', user?.rol, 'filtre:', filtre);
+
+        if (!user) {
+            console.log('❌ No user, returning early');
+            return;
+        }
 
         setYukleniyor(true);
         setHeadData([]);
@@ -129,10 +143,15 @@ export default function YonetimScreen() {
         if (filtre === 'atanmamis') filters.atanmamis = true;
         if (filtre === 'acil') filters.oncelik = 'acil';
 
+        console.log('📤 Calling subscribeToTalepler with filters:', filters);
+
         // Subscribe ONLY to the first page (Head)
         const unsubscribe = subscribeToTalepler(user.id, user.rol, filters, (result) => {
+            console.log('📥 subscribeToTalepler callback received:', { success: result.success, dataCount: result.data?.length, error: result.message });
+
             if (result.success && result.data) {
                 const freshData = result.data as Talep[];
+                console.log('✅ Setting headData with', freshData.length, 'items');
 
                 // Update HEAD data
                 setHeadData(freshData);
@@ -150,6 +169,9 @@ export default function YonetimScreen() {
                 if (result.data.length < 20) setHasMore(false);
 
                 setYukleniyor(false);
+            } else {
+                console.error('❌ subscribeToTalepler failed:', result.message);
+                setYukleniyor(false);
             }
         });
 
@@ -159,6 +181,7 @@ export default function YonetimScreen() {
         });
 
         return () => {
+            console.log('🧹 Cleaning up subscription for filtre:', filtre);
             if (unsubscribe) unsubscribe();
         };
     }, [user, filtre]);
@@ -193,8 +216,8 @@ export default function YonetimScreen() {
                 throw new Error(result.message);
             }
 
-            // Bildirim Gönder
-            const targetUserId = seciliTalep.olusturanId; // musteriId removed from type
+            // Bildirim Gönder (Müşteriye)
+            const targetUserId = seciliTalep.olusturanId;
             if (targetUserId) {
                 try {
                     const musteriDoc = await getDoc(doc(db, 'users', targetUserId));
@@ -209,7 +232,33 @@ export default function YonetimScreen() {
                         }
                     }
                 } catch (err) {
-                    console.error('Bildirim hatası:', err);
+                    console.error('Müşteri bildirim hatası:', err);
+                }
+            }
+
+            // Bildirim Gönder (Ekip Üyelerine / Teknisyenlere)
+            if (ekip.uyeler && ekip.uyeler.length > 0) {
+                try {
+                    // Tüm üyelerin push tokenlarını çek ve bildirim gönder
+                    ekip.uyeler.forEach(async (memberId) => {
+                        try {
+                            const memberDoc = await getDoc(doc(db, 'users', memberId));
+                            if (memberDoc.exists()) {
+                                const memberData = memberDoc.data();
+                                if (memberData?.pushToken) {
+                                    await sendPushNotification(
+                                        memberData.pushToken,
+                                        'Yeni Görev Atandı 📋',
+                                        `${seciliTalep.projeAdi}: ${seciliTalep.baslik}`
+                                    );
+                                }
+                            }
+                        } catch (err) {
+                            console.error(`Üye (${memberId}) bildirim hatası:`, err);
+                        }
+                    });
+                } catch (err) {
+                    console.error('Ekip bildirim hatası:', err);
                 }
             }
 
@@ -248,6 +297,23 @@ export default function YonetimScreen() {
 
     // Listelenecek talepler (Sadece arama filtresi uygula, diğerleri sunucudan geldi)
     const listelenecekTalepler = talepler.filter(t => {
+        // Time-based filtering
+        if (zamanFiltre !== 'hepsi') {
+            const talepDate = getTalepDate(t.olusturmaTarihi);
+            if (!talepDate) return false;
+
+            const now = new Date();
+            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const startOfWeek = new Date(startOfToday);
+            startOfWeek.setDate(startOfToday.getDate() - startOfToday.getDay()); // Sunday as start
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+            if (zamanFiltre === 'bugun' && talepDate < startOfToday) return false;
+            if (zamanFiltre === 'buHafta' && talepDate < startOfWeek) return false;
+            if (zamanFiltre === 'buAy' && talepDate < startOfMonth) return false;
+        }
+
+        // Text search filtering
         if (!aramaMetni) return true;
         const metin = aramaMetni.toLowerCase();
         return (
@@ -394,6 +460,33 @@ export default function YonetimScreen() {
                     >
                         <Text style={[styles.filtreText, { color: filtre === f.key ? '#fff' : colors.textSecondary }]}>
                             {f.label}
+                        </Text>
+                    </TouchableOpacity>
+                ))}
+            </View>
+
+            {/* Zaman Filtresi */}
+            <View style={[styles.zamanFiltreContainer, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
+                <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} style={{ marginRight: 8 }} />
+                {[
+                    { key: 'hepsi', label: 'Tümü', icon: 'infinite-outline' },
+                    { key: 'bugun', label: 'Bugün', icon: 'today-outline' },
+                    { key: 'buHafta', label: 'Bu Hafta', icon: 'calendar-outline' },
+                    { key: 'buAy', label: 'Bu Ay', icon: 'calendar-number-outline' },
+                ].map((z) => (
+                    <TouchableOpacity
+                        key={z.key}
+                        style={[
+                            styles.zamanFiltreButon,
+                            zamanFiltre === z.key && { backgroundColor: isDark ? '#1a3a5c' : '#e3f2fd', borderColor: colors.primary }
+                        ]}
+                        onPress={() => setZamanFiltre(z.key as any)}
+                    >
+                        <Text style={[
+                            styles.zamanFiltreText,
+                            { color: zamanFiltre === z.key ? colors.primary : colors.textSecondary }
+                        ]}>
+                            {z.label}
                         </Text>
                     </TouchableOpacity>
                 ))}
@@ -793,6 +886,25 @@ const styles = StyleSheet.create({
     filtreText: {
         fontSize: 14,
         fontWeight: '600',
+    },
+    zamanFiltreContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 10,
+        paddingHorizontal: 15,
+        borderTopWidth: 1,
+    },
+    zamanFiltreButon: {
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: 'transparent',
+        marginHorizontal: 4,
+    },
+    zamanFiltreText: {
+        fontSize: 12,
+        fontWeight: '500',
     },
     content: {
         flex: 1,

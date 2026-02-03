@@ -316,6 +316,29 @@ export default function YeniTalepScreen() {
 
 
             if (result.success) {
+                // Adminlere bildirim gönder
+                try {
+                    const { collection, query, where, getDocs } = require('firebase/firestore');
+                    const { db } = require('../../firebaseConfig');
+                    const { sendPushNotification } = require('../../services/notificationService');
+
+                    const adminQuery = query(collection(db, 'users'), where('rol', '==', 'yonetim'));
+                    const adminSnaps = await getDocs(adminQuery);
+
+                    adminSnaps.forEach((doc: any) => {
+                        const adminData = doc.data();
+                        if (adminData.pushToken) {
+                            sendPushNotification(
+                                adminData.pushToken,
+                                'Yeni Destek Talebi 🆕',
+                                `${seciliProje} - ${seciliKategori}: ${sorunBasligi}`
+                            );
+                        }
+                    });
+                } catch (notiError) {
+                    console.error('Admin bildirim hatası:', notiError);
+                }
+
                 Platform.OS === 'web'
                     ? alert('✅ Destek talebiniz başarıyla oluşturuldu!')
                     : Alert.alert('Başarılı! ✅', 'Destek talebiniz başarıyla oluşturuldu.', [{ text: 'Tamam' }]);

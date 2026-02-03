@@ -76,8 +76,8 @@ export default function KullanicilarScreen() {
     const verileriYukle = async () => {
         try {
             const result = await getAllUsers();
-            if (result.success && result.users) {
-                setKullanicilar(result.users as Kullanici[]);
+            if (result.success && result.data) {
+                setKullanicilar(result.data as Kullanici[]);
             } else {
                 setKullanicilar([]);
                 console.error('Kullanıcı verisi formatı hatalı:', result);

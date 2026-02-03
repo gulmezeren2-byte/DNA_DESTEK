@@ -1,6 +1,4 @@
-import {
-    initializeApp
-} from "firebase/app";
+import { initializeApp } from "firebase/app";
 import {
     createUserWithEmailAndPassword,
     User as FirebaseUser,
@@ -21,18 +19,8 @@ import {
     updateDoc
 } from "firebase/firestore";
 import { APP_CONFIG } from "../constants";
-import { auth, db } from "../firebaseConfig";
+import { db, firebaseConfig, getAuthInstance } from "../firebaseConfig";
 import { DNAUser, ServiceResponse, UserRole } from "../types";
-
-// Re-create config for secondary app usage (createUser) AND REST API access
-const firebaseConfig = {
-    apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
-    authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
-    projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
-    storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-    appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
-};
 
 const normalizeRole = (role: string | undefined): UserRole => {
     if (!role) return 'musteri';
@@ -109,113 +97,132 @@ const checkAndRestoreAdminProfile = async (user: FirebaseUser): Promise<any | nu
 
     if (APP_CONFIG.ADMIN_EMAILS.includes(user.email)) {
         console.log("Admin Whitelist Match: Checking if profile exists...");
-        // Check if doc exists
-        const userDoc = await getDoc(doc(db, "users", user.uid));
 
-        if (!userDoc.exists()) {
-            console.warn("⚠️ Admin Whitelisted User found WITHOUT Firestore Profile! Attempting auto-restore...");
+        try {
+            // Check if doc exists with TIMEOUT
+            const docPromise = getDoc(doc(db, "users", user.uid));
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Admin Check Timed Out")), 5000));
 
-            const adminData: Partial<DNAUser> = {
-                id: user.uid,
-                ad: "Admin",
-                soyad: "User",
-                email: user.email,
-                telefon: "",
-                rol: "yonetim", // FORCE YONETIM ROLE
-                kategori: "",
-                aktif: true,
-                olusturmaTarihi: new Date(),
-                olusturan: "sistem_recovery"
-            };
+            const userDoc: any = await Promise.race([docPromise, timeoutPromise]);
 
-            // Try SDK Write first
-            try {
-                await setDoc(doc(db, "users", user.uid), adminData);
-                console.log("✅ Admin Profile Auto-Restored via SDK.");
-                return adminData;
-            } catch (e) {
-                console.warn("SDK Restore failed, trying REST...", e);
-                // Try REST Write
+            if (!userDoc.exists()) {
+                console.warn("⚠️ Admin Whitelisted User found WITHOUT Firestore Profile! Attempting auto-restore...");
+
+                const adminData: Partial<DNAUser> = {
+                    id: user.uid,
+                    ad: "Admin",
+                    soyad: "User",
+                    email: user.email,
+                    telefon: "",
+                    rol: "yonetim", // FORCE YONETIM ROLE
+                    kategori: "",
+                    aktif: true,
+                    olusturmaTarihi: new Date(),
+                    olusturan: "sistem_recovery"
+                };
+
+                // Try SDK Write first
                 try {
-                    const token = await user.getIdToken();
-                    const success = await writeUserToFirestoreViaRest(adminData, token);
-                    if (success) {
-                        console.log("✅ Admin Profile Auto-Restored via REST.");
-                        return adminData;
+                    await setDoc(doc(db, "users", user.uid), adminData);
+                    console.log("✅ Admin Profile Auto-Restored via SDK.");
+                    return adminData;
+                } catch (e) {
+                    console.warn("SDK Restore failed, trying REST...", e);
+                    // Try REST Write
+                    try {
+                        const token = await user.getIdToken();
+                        const success = await writeUserToFirestoreViaRest(adminData, token);
+                        if (success) {
+                            console.log("✅ Admin Profile Auto-Restored via REST.");
+                            return adminData;
+                        }
+                    } catch (restErr) {
+                        console.error("REST Restore failed:", restErr);
                     }
-                } catch (restErr) {
-                    console.error("REST Restore failed:", restErr);
                 }
             }
+        } catch (err) {
+            console.warn("⚠️ Admin check skipped due to timeout/error:", err);
+            // Return null to allow app to open even if check fails
+            return null;
         }
     }
     return null;
 };
 
 export const onAuthChange = (callback: (user: DNAUser | null) => void) => {
-    // Defensive check: If auth is initialized correctly
-    if (auth && typeof (auth as any).onAuthStateChanged === 'function') {
-        // Double check standard SDK vs our potential empty object
-        // If auth is empty object {}, it won't have methods, so we check existence
-        try {
-            return onAuthStateChanged(auth, async (user: FirebaseUser | null) => {
-                if (user) {
-                    if (!user.email) return;
+    // Initialize auth lazily, then set up listener
+    getAuthInstance().then((auth) => {
+        if (auth) {
+            try {
+                onAuthStateChanged(auth, async (user: FirebaseUser | null) => {
+                    if (user) {
+                        if (!user.email) return;
 
-                    // --- ADMIN RECOVERY CHECK ---
-                    await checkAndRestoreAdminProfile(user);
-                    // ----------------------------
+                        // --- ADMIN RECOVERY CHECK ---
+                        await checkAndRestoreAdminProfile(user);
+                        // ----------------------------
 
-                    // Firestore'dan veri çekmeyi dene (Önce sunucu)
-                    const userDocPromise = getUserDocSafe(user.uid);
-                    // 5 saniye bekle (Sunucu yanıt vermezse)
-                    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 5000));
+                        // Firestore'dan veri çekmeyi dene (Önce sunucu)
+                        const userDocPromise = getUserDocSafe(user.uid);
+                        // 5 saniye bekle (Sunucu yanıt vermezse)
+                        const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 5000));
 
-                    let firestoreData: any = {};
-                    try {
-                        const result: any = await Promise.race([userDocPromise, timeoutPromise]);
-                        if (result && result.exists()) {
-                            firestoreData = result.data();
-                        } else {
-                            console.log("Firestore profile read timed out or empty, using basic auth info.");
+                        let firestoreData: any = {};
+                        try {
+                            const result: any = await Promise.race([userDocPromise, timeoutPromise]);
+                            if (result && result.exists()) {
+                                firestoreData = result.data();
+                            } else {
+                                console.log("Firestore profile read timed out or empty, using basic auth info.");
+                            }
+                        } catch (e) {
+                            console.warn("Firestore profile fetch failed:", e);
                         }
-                    } catch (e) {
-                        console.warn("Firestore profile fetch failed:", e);
+
+                        let userData: any = { uid: user.uid, email: user.email, rol: 'musteri', ...firestoreData };
+
+                        // Normalize role
+                        const rawRole = userData.rol || userData.role;
+                        const effectiveRole = normalizeRole(rawRole);
+                        userData.rol = effectiveRole;
+
+                        // --- KESİN YETKİ TANIMLAMASI (WHITELIST) ---
+                        if (APP_CONFIG.ADMIN_EMAILS.includes(user.email)) {
+                            // Just in case checkAndRestore failed but we want to grant session access
+                            userData.rol = 'yonetim';
+                        }
+
+                        callback(userData as DNAUser);
+
+                    } else {
+                        callback(null);
                     }
-
-                    let userData: any = { uid: user.uid, email: user.email, rol: 'musteri', ...firestoreData };
-
-                    // Normalize role
-                    const rawRole = userData.rol || userData.role;
-                    const effectiveRole = normalizeRole(rawRole);
-                    userData.rol = effectiveRole;
-
-                    // --- KESİN YETKİ TANIMLAMASI (WHITELIST) ---
-                    if (APP_CONFIG.ADMIN_EMAILS.includes(user.email)) {
-                        // Just in case checkAndRestore failed but we want to grant session access
-                        userData.rol = 'yonetim';
-                    }
-
-                    callback(userData as DNAUser);
-
-                } else {
-                    callback(null);
-                }
-            });
-        } catch (err) {
-            console.error("Critical: onAuthStateChanged failed securely.", err);
+                });
+            } catch (err) {
+                console.error("Critical: onAuthStateChanged failed.", err);
+                callback(null);
+            }
+        } else {
+            console.warn("Auth object is missing after initialization.");
             callback(null);
-            return () => { }; // Return dummy unsubscribe
         }
-    } else {
-        console.warn("Auth object is malformed or missing in onAuthChange. Skipping auth check.");
+    }).catch((err) => {
+        console.error("Auth initialization failed in onAuthChange:", err);
         callback(null);
-        return () => { }; // Dummy unsubscribe
-    }
+    });
+
+    // Return a cleanup function
+    return () => { };
 };
 
 export const loginUser = async (email: string, password: string): Promise<ServiceResponse<{ user: DNAUser }>> => {
     try {
+        const auth = await getAuthInstance();
+        if (!auth) {
+            return { success: false, message: "Kimlik doğrulama servisi başlatılamadı." };
+        }
+
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
 
@@ -265,7 +272,10 @@ export const loginUser = async (email: string, password: string): Promise<Servic
 
 export const logoutUser = async (): Promise<ServiceResponse<void>> => {
     try {
-        await signOut(auth);
+        const auth = await getAuthInstance();
+        if (auth) {
+            await signOut(auth);
+        }
         return { success: true };
     } catch (error: any) {
         return { success: false, message: error.message };
@@ -273,6 +283,9 @@ export const logoutUser = async (): Promise<ServiceResponse<void>> => {
 };
 
 export const getCurrentUser = async (): Promise<DNAUser | null> => {
+    const auth = await getAuthInstance();
+    if (!auth) return null;
+
     const user = auth.currentUser;
     if (user) {
         const userDoc = await getUserDocSafe(user.uid);
@@ -289,11 +302,13 @@ export const getCurrentUser = async (): Promise<DNAUser | null> => {
 export const createUser = async (userData: any, creatorEmail?: string, adminAuthPassword?: string): Promise<ServiceResponse<void>> => {
     let secondaryApp: any = null;
     try {
-        console.log("Creating new user (v4 - Hybrid REST Fallback) with data:", JSON.stringify(userData));
+        console.log("Creating new user (v6 - Lazy Auth) with data:", JSON.stringify(userData));
 
         // Create secondary app to create user without logging out admin
         const secondaryAppName = "SecondaryApp-" + new Date().getTime();
         secondaryApp = initializeApp(firebaseConfig, secondaryAppName);
+
+        // Use simple getAuth for secondary app
         const secondaryAuth = getAuth(secondaryApp);
 
         const userCredential = await createUserWithEmailAndPassword(secondaryAuth, userData.email, userData.sifre);
@@ -323,12 +338,14 @@ export const createUser = async (userData: any, creatorEmail?: string, adminAuth
 
         console.log(`Role raw: ${userData.rol} -> normalized: ${normalizedRole}`);
 
-        if (!auth.currentUser) {
+        // Check if admin is logged in
+        const mainAuth = await getAuthInstance();
+        if (!mainAuth || !mainAuth.currentUser) {
             console.error("CRITICAL: Admin user appears to be logged out! Cannot write to DB.");
             throw new Error("Admin oturumu kapalı görünüyor.");
         }
 
-        console.log("Writing to DB as Admin:", auth.currentUser.uid);
+        console.log("Writing to DB as Admin:", mainAuth.currentUser.uid);
 
         // HYBRID WRITE STRATEGY
         // 1. Try SDK (Main DB) with short timeout
@@ -358,7 +375,7 @@ export const createUser = async (userData: any, creatorEmail?: string, adminAuth
         // FALLBACK TO REST API
         console.warn("Falling back to REST API for user profile creation...");
         try {
-            const token = await auth.currentUser.getIdToken();
+            const token = await mainAuth.currentUser!.getIdToken();
             const restSuccess = await writeUserToFirestoreViaRest(userDocData, token);
 
             if (restSuccess) {
@@ -401,7 +418,7 @@ export const getAllUsers = async (): Promise<ServiceResponse<DNAUser[]>> => {
             querySnapshot = await getDocs(collection(db, "users"));
         }
 
-        const users = querySnapshot.docs.map(doc => {
+        const users = querySnapshot.docs.map((doc: any) => {
             const data = doc.data();
             // @ts-ignore
             const effectiveRole = normalizeRole(data.rol || data.role);

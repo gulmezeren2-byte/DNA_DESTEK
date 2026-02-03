@@ -66,5 +66,19 @@ service cloud.firestore {
         (resource.data.olusturanId == request.auth.uid && resource.data.durum == 'yeni') // Customers can only update if status is new
       );
     }
+
+    // Ekipler Collection - Admin only for CRUD
+    match /ekipler/{ekipId} {
+      allow read: if isSignedIn() && (isAdmin() || isTechnician());
+      allow create: if isAdmin() || isAdminEmail();
+      allow update: if isAdmin() || isAdminEmail();
+      allow delete: if isAdmin() || isAdminEmail();
+    }
+
+    // Projeler Collection - Admin can manage, all authenticated can read
+    match /projeler/{projeId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isAdminEmail();
+    }
   }
 }

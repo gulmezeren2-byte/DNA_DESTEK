@@ -1,21 +1,8 @@
-import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
-import { FirebaseApp, getApp, initializeApp } from "firebase/app";
-import {
-  Auth,
-  getAuth,
-  // @ts-ignore
-  getReactNativePersistence,
-  initializeAuth
-} from "firebase/auth";
-import {
-  Firestore,
-  getFirestore,
-  initializeFirestore
-} from "firebase/firestore";
-import { Platform } from 'react-native';
+import { getApp, getApps, initializeApp } from "firebase/app";
+import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || "missing-api-key",
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
   storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
@@ -23,80 +10,61 @@ const firebaseConfig = {
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
-if (firebaseConfig.apiKey === "missing-api-key") {
-  console.error("❌ CRITICAL: Firebase API Key is MISSING! App will likely crash or fail to connect.");
-  console.error("Make sure EXPO_PUBLIC_FIREBASE_API_KEY is defined.");
-}
-
-// 1. Initialize App
-let app: FirebaseApp;
+// Initialize Firebase App (handle hot reload)
+let app: any;
 try {
-  app = getApp();
-} catch {
-  try {
+  if (getApps().length === 0) {
     app = initializeApp(firebaseConfig);
-  } catch (e) {
-    console.error("❌ Firebase Init Failed:", e);
-    // Dummy app to prevent immediate crash, though subsequent calls will likely fail
-    app = { name: '[DEFAULT]', options: firebaseConfig } as FirebaseApp;
+    console.log("✅ Firebase App initialized");
+  } else {
+    app = getApp();
+    console.log("✅ Firebase App already exists, reusing");
   }
-}
-
-// 2. Initialize Auth
-let auth: Auth;
-// Helper to avoid duplicate logic
-const initializeNativeAuth = () => {
-  try {
-    if (typeof getReactNativePersistence === 'function') {
-      return initializeAuth(app, {
-        persistence: getReactNativePersistence(ReactNativeAsyncStorage)
-      });
-    } else {
-      console.warn("⚠️ getReactNativePersistence is not a function.");
-      return getAuth(app);
-    }
-  } catch (e: any) {
-    if (e.code === 'auth/already-initialized') {
-      return getAuth(app);
-    }
-    throw e;
-  }
-}
-
-if (Platform.OS === 'web') {
-  auth = getAuth(app);
-} else {
-  // NATIVE
-  try {
-    console.log("🔥 Initializing Auth with Native Persistence...");
-    auth = initializeNativeAuth();
-    console.log("✅ Auth initialized successfully.");
-  } catch (e: any) {
-    console.error("❌ Native Auth Init Failed:", e);
-    // Fallback to memory auth (standard getAuth)
-    try {
-      auth = getAuth(app);
-    } catch {
-      // Last resort
-      auth = {} as Auth;
-    }
-  }
-}
-
-// 3. Initialize Firestore
-let db: Firestore;
-try {
-  db = initializeFirestore(app, {
-    experimentalForceLongPolling: true,
-  });
 } catch (e) {
-  try {
-    db = getFirestore(app);
-  } catch {
-    console.error("❌ Firestore Init Failed");
-    db = {} as Firestore;
-  }
+  console.error("❌ Firebase App Init Failed:", e);
+  app = {} as any;
 }
 
-export { auth, db };
+// Initialize Firestore
+let db: any;
+try {
+  db = getFirestore(app);
+  console.log("✅ Firestore initialized");
+} catch (e) {
+  console.error("❌ Firestore Init Failed:", e);
+  db = {};
+}
+
+// AUTH IS INITIALIZED LAZILY to avoid "Component auth has not been registered yet" error
+// The auth module will be loaded on-demand when getAuthInstance() is first called
+let authInstance: any = null;
+let authInitPromise: Promise<any> | null = null;
+
+export const getAuthInstance = async () => {
+  if (authInstance) return authInstance;
+
+  if (authInitPromise) {
+    return authInitPromise;
+  }
+
+  authInitPromise = (async () => {
+    try {
+      // Dynamic import to ensure auth module is fully loaded
+      const { getAuth } = await import("firebase/auth");
+      authInstance = getAuth(app);
+      console.log("✅ Auth initialized (lazy)");
+      return authInstance;
+    } catch (e) {
+      console.error("❌ Auth Init Failed:", e);
+      return null;
+    }
+  })();
+
+  return authInitPromise;
+};
+
+// Also provide synchronous access for cases where auth might already be initialized
+export const getAuthSync = () => authInstance;
+
+export { app, db, firebaseConfig };
 

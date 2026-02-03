@@ -1,30 +1,30 @@
 
-import { validateEmail, validatePassword } from '../validation';
+import { isStrongPassword, isValidEmail } from '../validation';
 
 describe('Validation Utils', () => {
-    describe('validateEmail', () => {
+    describe('isValidEmail', () => {
         it('should return true for valid emails', () => {
-            expect(validateEmail('test@example.com')).toBe(true);
-            expect(validateEmail('user.name@domain.co.uk')).toBe(true);
+            expect(isValidEmail('test@example.com')).toBe(true);
+            expect(isValidEmail('user.name@domain.co.uk')).toBe(true);
         });
 
         it('should return false for invalid emails', () => {
-            expect(validateEmail('invalid-email')).toBe(false);
-            expect(validateEmail('@domain.com')).toBe(false);
-            expect(validateEmail('user@')).toBe(false);
-            expect(validateEmail('')).toBe(false);
+            expect(isValidEmail('invalid-email')).toBe(false);
+            expect(isValidEmail('@domain.com')).toBe(false);
+            expect(isValidEmail('user@')).toBe(false);
+            expect(isValidEmail('')).toBe(false);
         });
     });
 
-    describe('validatePassword', () => {
+    describe('isStrongPassword', () => {
         it('should return true for passwords with 6 or more characters', () => {
-            expect(validatePassword('123456')).toBe(true);
-            expect(validatePassword('password123')).toBe(true);
+            expect(isStrongPassword('123456').valid).toBe(true);
+            expect(isStrongPassword('password123').valid).toBe(true);
         });
 
         it('should return false for passwords shorter than 6 characters', () => {
-            expect(validatePassword('12345')).toBe(false);
-            expect(validatePassword('')).toBe(false);
+            expect(isStrongPassword('12345').valid).toBe(false);
+            expect(isStrongPassword('').valid).toBe(false);
         });
     });
 });

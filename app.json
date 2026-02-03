@@ -2,6 +2,7 @@
   "expo": {
     "name": "DNA_DESTEK",
     "slug": "dna-destek",
+    "scheme": "dnadestek",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "assets/icon.png",

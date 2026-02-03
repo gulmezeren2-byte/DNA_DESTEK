@@ -68,7 +68,7 @@ export default function CustomDrawerContent(props: DrawerContentComponentProps) 
                 </DrawerContentScrollView>
 
                 {/* Footer / Logout */}
-                <View style={[styles.footer, { paddingBottom: insets.bottom + 20 }]}>
+                <View style={[styles.footer, { paddingBottom: insets.bottom + 80 }]}>
                     <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
                         <Ionicons name="log-out-outline" size={22} color="#ff6b6b" />
                         <Text style={styles.logoutText}>Çıkış Yap</Text>

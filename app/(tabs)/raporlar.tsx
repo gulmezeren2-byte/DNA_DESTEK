@@ -4,14 +4,15 @@ import { useRouter } from 'expo-router';
 import { collection, getCountFromServer, getDocs, orderBy, query, where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import {
-    Dimensions,
+    Platform,
     RefreshControl,
     ScrollView,
     StatusBar,
     StyleSheet,
     Text,
     TouchableOpacity,
-    View
+    View,
+    useWindowDimensions
 } from 'react-native';
 import { BarChart, LineChart, PieChart, ProgressChart } from 'react-native-chart-kit';
 import { FadeInView } from '../../components/AnimatedList';
@@ -21,8 +22,6 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { db } from '../../firebaseConfig';
 import { getAllEkipler } from '../../services/ekipService';
-
-const screenWidth = Dimensions.get('window').width;
 
 interface Talep {
     id: string;
@@ -60,6 +59,23 @@ export default function RaporlarScreen() {
     const { user } = useAuth();
     const { isDark, colors } = useTheme();
     const router = useRouter();
+    const { width: windowWidth } = useWindowDimensions();
+
+    // Responsive Hesaplama
+    // Web'de max-width: 1600px olsun (Büyük ekranlar için)
+    const isWeb = Platform.OS === 'web';
+    const containerWidth = isWeb ? Math.min(windowWidth, 1600) : windowWidth;
+
+    // Padding Hesaplaması:
+    // Content Padding: 16 (sol) + 16 (sağ) = 32
+    // Card Padding: 20 (sol) + 20 (sağ) = 40
+    // Toplam Padding: 72px
+    // Güvenlik Payı: 8px -> Toplam 80px çıkarılmalı
+    const chartWidth = containerWidth - 80;
+
+    // Web için yan yana grafiklerin genişliği
+    // (Container - Aradaki Boşluk - Paddingler) / 2
+    const splitChartWidth = isWeb ? (containerWidth - 16 - 80) / 2 : chartWidth;
 
     const [yukleniyor, setYukleniyor] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -82,8 +98,6 @@ export default function RaporlarScreen() {
             const talesRef = collection(db, 'talepler');
 
             // 1. Global İstatistikleri Çek (Server-Side Count)
-            // Not: Firestore free tier'da aggregate queries limitli olabilir ama çok daha performanslıdır.
-            // Eğer maliyet endişesi varsa bunlar da önbelleğe alınabilir.
             const qTotal = query(talesRef);
             const qOpen = query(talesRef, where('durum', 'in', ['yeni', 'atandi', 'islemde', 'beklemede']));
             const qSolved = query(talesRef, where('durum', '==', 'cozuldu'));
@@ -119,8 +133,8 @@ export default function RaporlarScreen() {
 
             // 3. Ekipleri Yükle
             const ekipResult = await getAllEkipler();
-            if (ekipResult.success && ekipResult.ekipler) {
-                setEkipler(ekipResult.ekipler as Ekip[]);
+            if (ekipResult.success && ekipResult.data) {
+                setEkipler(ekipResult.data as Ekip[]);
             }
         } catch (error) {
             console.error('Veri yükleme hatası:', error);
@@ -131,26 +145,11 @@ export default function RaporlarScreen() {
 
     useEffect(() => {
         verileriYukle();
-    }, [filterDays]); // Filtre değişince yeniden yükle
+    }, [filterDays]);
 
-    // İstatistik Hesaplamaları (Grafikler için sadece filtrelenmiş veri kullanılır)
-    // Global kartlar için globalStats kullanılır
+    // İstatistik Hesaplamaları 
     const globalCozumOrani = globalStats.toplam > 0 ? Math.round((globalStats.cozuldu / globalStats.toplam) * 100) : 0;
-
-
-    // İstatistik Hesaplamaları (Filtrelenmiş veri için local stats)
     const toplam = talepler.length;
-    const acik = talepler.filter(t => !['cozuldu', 'iptal'].includes(t.durum)).length;
-    const cozuldu = talepler.filter(t => t.durum === 'cozuldu').length;
-    const iptal = talepler.filter(t => t.durum === 'iptal').length;
-    const acil = talepler.filter(t => t.oncelik === 'acil').length;
-
-    // Filtrelenmiş dönem çözüm oranı
-    let hesaplananOran = 0;
-    if (toplam > 0) {
-        hesaplananOran = (cozuldu / toplam) * 100;
-    }
-    const cozumOrani = Number.isFinite(hesaplananOran) ? Math.round(hesaplananOran) : 0;
 
     // Durum Dağılımı (Pie Chart)
     const durumSayilari: Record<string, number> = {};
@@ -182,7 +181,7 @@ export default function RaporlarScreen() {
         datasets: [{ data: kategoriValues.length > 0 ? kategoriValues : [0] }],
     };
 
-    // Proje Bazlı (Bar Chart)
+    // Proje Bazlı (Liste)
     const projeSayilari: Record<string, number> = {};
     talepler.forEach(t => {
         if (t.projeAdi) {
@@ -191,7 +190,6 @@ export default function RaporlarScreen() {
     });
 
     const projeLabels = Object.keys(projeSayilari).slice(0, 5);
-    const projeValues = projeLabels.map(p => projeSayilari[p]);
 
     // Ekip Performansı
     interface IEkipStats {
@@ -205,9 +203,7 @@ export default function RaporlarScreen() {
         if (!ekipPerformans[t.atananEkipAdi!]) {
             ekipPerformans[t.atananEkipAdi!] = { cozulenSayisi: 0, toplamPuan: 0, puanlananIsSayisi: 0 };
         }
-
         ekipPerformans[t.atananEkipAdi!].cozulenSayisi += 1;
-
         if (t.puan) {
             ekipPerformans[t.atananEkipAdi!].toplamPuan += t.puan;
             ekipPerformans[t.atananEkipAdi!].puanlananIsSayisi += 1;
@@ -218,25 +214,15 @@ export default function RaporlarScreen() {
         .sort((a, b) => b[1].cozulenSayisi - a[1].cozulenSayisi)
         .slice(0, 5);
 
-    const getEkipRengi = (ekipAdi: string) => {
-        const ekip = ekipler.find(e => e.ad === ekipAdi);
-        return ekip ? ekip.renk : colors.primary;
-    };
-
-    // Trend Chart (Dinamik)
+    // Trend Chart
     const simdi = Date.now();
     const gunlukTalepler: number[] = [];
-    const labels: string[] = [];
-
-    // Grafikte her zaman makul sayıda nokta göster (max 7-10)
     const step = Math.ceil(filterDays / 7);
 
     for (let i = filterDays - 1; i >= 0; i--) {
         const gunBaslangic = simdi - (i + 1) * 24 * 60 * 60 * 1000;
         const gunBitis = simdi - i * 24 * 60 * 60 * 1000;
 
-        // Sadece seçilen noktaları hesapla veya hepsini hesapla ama sadece bazılarını etikete koy
-        // Hepsini hesaplamak zorundayız ki grafik doğru olsun
         const sayi = talepler.filter(t => {
             if (!t.olusturmaTarihi) return false;
             const tarih = t.olusturmaTarihi.seconds * 1000;
@@ -244,27 +230,12 @@ export default function RaporlarScreen() {
         }).length;
 
         gunlukTalepler.push(sayi);
-
-        if (i % step === 0) {
-            const d = new Date(gunBitis);
-            labels.push(`${d.getDate()}/${d.getMonth() + 1}`);
-        }
     }
 
-    // Chart Kit labels limiti yok, manuel handle gerekir.
-    // React Native Chart Kit, veri sayısı kadar label bekler ya da eşit aralıklar koyar.
-    // Biz burada tüm veriyi verip, label'ları sadeleştirmeyi deneyebiliriz ama library buna tam izin vermeyebilir.
-    // Basit çözüm: Son 7 günü göster, ya da veri setini "sample" yap.
-    // Kullanıcı "Son 30 Gün" seçtiyse, grafikte 30 nokta olsun ama labellar az olsun demek zor.
-    // Bu kütüphanede `labels` array uzunluğu `data` ile aynı olmalı diye bir kural yok ama genellikle eşleşir.
-    // Optimize: Veriyi sıkıştır (3 günde bir topla) -> Bu trendi bozar.
-
-    // Karar: 30 gün için 30 nokta gösterelim, etiketleri boş string yaparak gizleyelim.
     const chartLabels = gunlukTalepler.map((_, index) => {
-        // Sadece belirli aralıklarla tarih göster
         if (index % step === 0 || index === gunlukTalepler.length - 1) {
             const dateVal = new Date(simdi - (filterDays - 1 - index) * 24 * 60 * 60 * 1000);
-            return `${dateVal.getDate()}`;
+            return `${dateVal.getDate()}/${dateVal.getMonth() + 1}`;
         }
         return '';
     });
@@ -272,12 +243,6 @@ export default function RaporlarScreen() {
     const lineData = {
         labels: chartLabels,
         datasets: [{ data: gunlukTalepler.length > 0 ? gunlukTalepler : [0] }],
-    };
-
-    // Progress Chart Data
-    const progressData = {
-        labels: ['Çözüm'],
-        data: [cozumOrani / 100 || 0],
     };
 
     const chartConfig = {
@@ -289,13 +254,13 @@ export default function RaporlarScreen() {
         labelColor: () => colors.textSecondary,
         style: { borderRadius: 16 },
         propsForDots: {
-            r: '6',
+            r: '5',
             strokeWidth: '2',
             stroke: colors.primary,
         },
         propsForBackgroundLines: {
             strokeDasharray: '',
-            stroke: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+            stroke: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
         },
     };
 
@@ -318,7 +283,7 @@ export default function RaporlarScreen() {
                 end={{ x: 1, y: 1 }}
                 style={styles.header}
             >
-                <View style={styles.headerTop}>
+                <View style={[styles.headerTop, isWeb && { maxWidth: 1600, alignSelf: 'center', width: '100%' }]}>
                     <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
                         <Ionicons name="arrow-back" size={24} color="#fff" />
                     </TouchableOpacity>
@@ -337,6 +302,7 @@ export default function RaporlarScreen() {
 
             <ScrollView
                 style={styles.content}
+                contentContainerStyle={[styles.scrollContent, isWeb && { maxWidth: 1600, alignSelf: 'center', width: '100%', paddingHorizontal: 0 }]}
                 showsVerticalScrollIndicator={false}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); verileriYukle(); }} colors={[colors.primary]} />}
             >
@@ -364,23 +330,23 @@ export default function RaporlarScreen() {
 
                 {/* Özet Kartlar (Global Stats) */}
                 <FadeInView delay={0} style={styles.summaryContainer}>
-                    <View style={[styles.summaryCard, { backgroundColor: '#818cf8' }]}>
-                        <Ionicons name="documents" size={28} color="#fff" />
+                    <View style={[styles.summaryCard, { backgroundColor: '#818cf8', flexBasis: isWeb ? '23%' : '48%' }]}>
+                        <Ionicons name="documents" size={24} color="#fff" />
                         <Text style={styles.summaryNumber}>{globalStats.toplam}</Text>
-                        <Text style={styles.summaryLabel}>Toplam (Global)</Text>
+                        <Text style={styles.summaryLabel}>Toplam</Text>
                     </View>
-                    <View style={[styles.summaryCard, { backgroundColor: '#f59e0b' }]}>
-                        <Ionicons name="time" size={28} color="#fff" />
+                    <View style={[styles.summaryCard, { backgroundColor: '#f59e0b', flexBasis: isWeb ? '23%' : '48%' }]}>
+                        <Ionicons name="time" size={24} color="#fff" />
                         <Text style={styles.summaryNumber}>{globalStats.acik}</Text>
-                        <Text style={styles.summaryLabel}>Açık Talep</Text>
+                        <Text style={styles.summaryLabel}>Açık</Text>
                     </View>
-                    <View style={[styles.summaryCard, { backgroundColor: '#10b981' }]}>
-                        <Ionicons name="checkmark-circle" size={28} color="#fff" />
+                    <View style={[styles.summaryCard, { backgroundColor: '#10b981', flexBasis: isWeb ? '23%' : '48%' }]}>
+                        <Ionicons name="checkmark-circle" size={24} color="#fff" />
                         <Text style={styles.summaryNumber}>{globalStats.cozuldu}</Text>
                         <Text style={styles.summaryLabel}>Çözüldü</Text>
                     </View>
-                    <View style={[styles.summaryCard, { backgroundColor: '#ef4444' }]}>
-                        <Ionicons name="alert-circle" size={28} color="#fff" />
+                    <View style={[styles.summaryCard, { backgroundColor: '#ef4444', flexBasis: isWeb ? '23%' : '48%' }]}>
+                        <Ionicons name="alert-circle" size={24} color="#fff" />
                         <Text style={styles.summaryNumber}>{globalStats.acil}</Text>
                         <Text style={styles.summaryLabel}>Acil</Text>
                     </View>
@@ -392,10 +358,10 @@ export default function RaporlarScreen() {
                     <View style={styles.progressContainer}>
                         <ProgressChart
                             data={{ labels: ['Çözüm'], data: [globalCozumOrani / 100 || 0] }}
-                            width={screenWidth - 80}
-                            height={140}
+                            width={chartWidth}
+                            height={180}
                             strokeWidth={16}
-                            radius={50}
+                            radius={60}
                             chartConfig={{
                                 ...chartConfig,
                                 color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
@@ -413,59 +379,71 @@ export default function RaporlarScreen() {
                 {/* Son X Gün Trend */}
                 <FadeInView delay={200} style={[styles.chartCard, { backgroundColor: colors.card }]}>
                     <Text style={[styles.chartTitle, { color: colors.text }]}>📈 Son {filterDays} Günlük Aktivite</Text>
-                    <LineChart
-                        data={lineData}
-                        width={screenWidth - 48}
-                        height={200}
-                        chartConfig={chartConfig}
-                        bezier
-                        style={styles.chart}
-                        withInnerLines={false}
-                        withOuterLines={false}
-                        withVerticalLabels={true}
-                        withHorizontalLabels={true}
-                        fromZero
-                    />
-                </FadeInView>
-
-                {/* Durum Dağılımı */}
-                {pieData.length > 0 && (
-                    <FadeInView delay={300} style={[styles.chartCard, { backgroundColor: colors.card }]}>
-                        <Text style={[styles.chartTitle, { color: colors.text }]}>🍕 Durum Dağılımı</Text>
-                        <PieChart
-                            data={pieData}
-                            width={screenWidth - 48}
-                            height={200}
-                            chartConfig={chartConfig}
-                            accessor="population"
-                            backgroundColor="transparent"
-                            paddingLeft="15"
-                            absolute
-                            style={styles.chart}
-                        />
-                    </FadeInView>
-                )}
-
-                {/* Kategori Dağılımı */}
-                {kategoriLabels.length > 0 && (
-                    <FadeInView delay={400} style={[styles.chartCard, { backgroundColor: colors.card }]}>
-                        <Text style={[styles.chartTitle, { color: colors.text }]}>📊 Kategori Bazlı Arızalar</Text>
-                        <BarChart
-                            data={barData}
-                            width={screenWidth - 48}
-                            height={220}
+                    {gunlukTalepler.length > 0 ? (
+                        <LineChart
+                            data={lineData}
+                            width={chartWidth}
+                            height={280} // Yükseklik biraz daha arttırıldı
                             chartConfig={{
                                 ...chartConfig,
-                                color: (opacity = 1) => `rgba(139, 92, 246, ${opacity})`,
+                                propsForDots: { r: '4', strokeWidth: '2', stroke: colors.primary }
                             }}
+                            bezier
                             style={styles.chart}
-                            showValuesOnTopOfBars
+                            withInnerLines={true}
+                            withOuterLines={false}
+                            withVerticalLabels={true}
+                            withHorizontalLabels={true}
                             fromZero
-                            yAxisLabel=""
-                            yAxisSuffix=""
+                            yAxisInterval={1}
                         />
-                    </FadeInView>
-                )}
+                    ) : (
+                        <Text style={[styles.emptyText, { color: colors.textMuted }]}>Veri yok</Text>
+                    )}
+                </FadeInView>
+
+                {/* Durum Dağılımı ve Kategori Yan Yana (Web) veya Alt Alta (Mobil) */}
+                <View style={isWeb ? styles.rowCharts : {}}>
+                    {/* Durum Dağılımı */}
+                    {pieData.length > 0 && (
+                        <FadeInView delay={300} style={[styles.chartCard, { backgroundColor: colors.card, flex: 1, marginRight: isWeb ? 16 : 0 }]}>
+                            <Text style={[styles.chartTitle, { color: colors.text }]}>🍕 Durum Dağılımı</Text>
+                            <PieChart
+                                data={pieData}
+                                width={splitChartWidth}
+                                height={240}
+                                chartConfig={chartConfig}
+                                accessor="population"
+                                backgroundColor="transparent"
+                                paddingLeft="0"
+                                center={[10, 0]}
+                                absolute
+                                style={styles.chart}
+                            />
+                        </FadeInView>
+                    )}
+
+                    {/* Kategori Dağılımı */}
+                    {kategoriLabels.length > 0 && (
+                        <FadeInView delay={400} style={[styles.chartCard, { backgroundColor: colors.card, flex: 1, marginLeft: isWeb ? 16 : 0 }]}>
+                            <Text style={[styles.chartTitle, { color: colors.text }]}>📊 Kategori Bazlı Arızalar</Text>
+                            <BarChart
+                                data={barData}
+                                width={splitChartWidth}
+                                height={240}
+                                chartConfig={{
+                                    ...chartConfig,
+                                    color: (opacity = 1) => `rgba(139, 92, 246, ${opacity})`,
+                                }}
+                                style={styles.chart}
+                                showValuesOnTopOfBars
+                                fromZero
+                                yAxisLabel=""
+                                yAxisSuffix=""
+                            />
+                        </FadeInView>
+                    )}
+                </View>
 
                 {/* Top Ekipler */}
                 <View style={[styles.chartCard, { backgroundColor: colors.card }]}>
@@ -502,7 +480,7 @@ export default function RaporlarScreen() {
                                         </View>
                                     </View>
                                     <View style={[styles.basariBadge, { backgroundColor: isDark ? '#1a3a1a' : '#e8f5e9' }]}>
-                                        <Ionicons name="trophy" size={14} color="#4caf50" />
+                                        <Ionicons name="trophy" size={12} color="#4caf50" />
                                         <Text style={styles.basariText}>%{(stats.cozulenSayisi / toplam * 100).toFixed(0)}</Text>
                                     </View>
                                 </View>
@@ -546,8 +524,6 @@ export default function RaporlarScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    loadingText: { marginTop: 12, fontSize: 14 },
     header: {
         paddingTop: 50,
         paddingBottom: 25,
@@ -565,7 +541,8 @@ const styles = StyleSheet.create({
     refreshButton: { padding: 8, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 12 },
     headerTitle: { fontSize: 24, fontWeight: '700', color: '#fff', letterSpacing: 0.5 },
     headerSubtitle: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
-    content: { flex: 1, padding: 16 },
+    content: { flex: 1 },
+    scrollContent: { padding: 16 },
 
     // Filter
     filterContainer: { flexDirection: 'row', gap: 10, marginBottom: 16 },
@@ -579,20 +556,18 @@ const styles = StyleSheet.create({
     filterText: { fontSize: 13, fontWeight: '600' },
 
     // Özet Kartlar
-    summaryContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 16 },
+    summaryContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 16, gap: 10 },
     summaryCard: {
-        width: '48%',
         padding: 16,
         borderRadius: 16,
-        marginBottom: 12,
         alignItems: 'center',
         shadowColor: '#000',
         shadowOpacity: 0.15,
         shadowRadius: 8,
         elevation: 4,
     },
-    summaryNumber: { fontSize: 32, fontWeight: '800', color: '#fff', marginTop: 8 },
-    summaryLabel: { fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 4, fontWeight: '500' },
+    summaryNumber: { fontSize: 24, fontWeight: '800', color: '#fff', marginTop: 8 },
+    summaryLabel: { fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 2, fontWeight: '500' },
 
     // Chart Cards
     chartCard: {
@@ -603,9 +578,12 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.08,
         shadowRadius: 12,
         elevation: 3,
+        alignItems: 'center',
+        overflow: 'hidden'
     },
-    chartTitle: { fontSize: 18, fontWeight: '700', marginBottom: 20 },
+    chartTitle: { fontSize: 18, fontWeight: '700', marginBottom: 20, alignSelf: 'flex-start' },
     emptyText: { textAlign: 'center', fontSize: 14, fontStyle: 'italic', padding: 20 },
+    rowCharts: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
 
     // Teknisyen/Ekip Listesi
     teknisyenItem: {
@@ -623,50 +601,39 @@ const styles = StyleSheet.create({
     },
     teknisyenSol: { flexDirection: 'row', alignItems: 'center', gap: 12 },
     teknisyenSira: {
-        width: 28,
-        height: 28,
-        borderRadius: 14,
+        width: 24,
+        height: 24,
+        borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',
     },
-    siraText: { fontWeight: 'bold', fontSize: 12 },
+    siraText: { fontWeight: 'bold', fontSize: 11 },
     teknisyenAd: { fontWeight: '600', fontSize: 14 },
-    teknisyenGorev: { fontSize: 12, marginTop: 2 },
+    teknisyenGorev: { fontSize: 11, marginTop: 1 },
     basariBadge: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 12,
-        gap: 4,
+        paddingHorizontal: 6,
+        paddingVertical: 3,
+        borderRadius: 10,
+        gap: 3,
     },
-    basariText: { fontSize: 12, fontWeight: 'bold', color: '#4caf50' },
+    basariText: { fontSize: 11, fontWeight: 'bold', color: '#4caf50' },
 
-    chart: { borderRadius: 16 },
+    chart: { borderRadius: 16, marginTop: 10 },
 
     // Progress Chart
     progressContainer: { alignItems: 'center', justifyContent: 'center', position: 'relative' },
     progressOverlay: { position: 'absolute', alignItems: 'center' },
-    progressPercent: { fontSize: 36, fontWeight: '800' },
-    progressLabel: { fontSize: 13, marginTop: 2 },
-
-    // Rank List
-    rankItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
-    rankBadge: { width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-    rankNumber: { color: '#fff', fontWeight: '700', fontSize: 13 },
-    rankName: { flex: 1, fontSize: 15, fontWeight: '500' },
-    rankBarContainer: { flex: 1, height: 8, backgroundColor: 'rgba(0,0,0,0.05)', borderRadius: 4, marginHorizontal: 12, overflow: 'hidden' },
-    rankBar: { height: '100%', borderRadius: 4 },
-    rankCount: { fontSize: 15, fontWeight: '700', minWidth: 30, textAlign: 'right' },
+    progressPercent: { fontSize: 32, fontWeight: '800' },
+    progressLabel: { fontSize: 12, marginTop: 2 },
 
     // Project Items
     projectItem: { marginBottom: 16 },
     projectHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
     projectName: { fontSize: 15, fontWeight: '600' },
     projectCount: { fontSize: 13 },
-    projectBarBg: { height: 10, borderRadius: 5, overflow: 'hidden' },
-    projectBar: { height: '100%', borderRadius: 5 },
-    projectPercent: { fontSize: 12, fontWeight: '600', marginTop: 6 },
-
-
+    projectBarBg: { height: 8, borderRadius: 4, overflow: 'hidden' },
+    projectBar: { height: '100%', borderRadius: 4 },
+    projectPercent: { fontSize: 12, fontWeight: '600', marginTop: 4 },
 });
