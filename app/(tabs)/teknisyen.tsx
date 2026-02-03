@@ -39,7 +39,7 @@ const durumSecenekleri = [
 
 const durumConfig: Record<string, { label: string; text: string; bg: string; textDark: string; bgDark: string; icon: string }> = {
     yeni: { label: 'Yeni', text: '#2196f3', bg: '#e3f2fd', textDark: '#64b5f6', bgDark: '#1a3a5c', icon: 'flash' },
-    atanmis: { label: 'Atandı', text: '#ff9800', bg: '#fff3e0', textDark: '#ffb74d', bgDark: '#3e2723', icon: 'people' },
+    atandi: { label: 'Atandı', text: '#ff9800', bg: '#fff3e0', textDark: '#ffb74d', bgDark: '#3e2723', icon: 'people' },
     islemde: { label: 'İşlemde', text: '#9c27b0', bg: '#f3e5f5', textDark: '#ba68c8', bgDark: '#4a148c', icon: 'construct' },
     beklemede: { label: 'Beklemede', text: '#f44336', bg: '#ffebee', textDark: '#ef5350', bgDark: '#b71c1c', icon: 'time' },
     cozuldu: { label: 'Çözüldü', text: '#4caf50', bg: '#e8f5e9', textDark: '#81c784', bgDark: '#1b5e20', icon: 'checkmark-circle' },
@@ -176,7 +176,7 @@ export default function TeknisyenScreen() {
                 // 2. STRATEGY: Active Tasks (Guaranteed delivery)
                 // We create a listener for EACH team for active statuses.
                 // This overcomes the limit of combining 'in' operators.
-                const activeStatus = ['yeni', 'atanmis', 'islemde', 'beklemede'];
+                const activeStatus = ['yeni', 'atandi', 'islemde', 'beklemede'];
                 // Temporary storage for merge
                 const activeMap = new Map<string, Talep>();
                 const completedMap = new Map<string, Talep>();

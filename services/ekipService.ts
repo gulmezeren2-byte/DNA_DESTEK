@@ -94,7 +94,7 @@ const checkActiveTasksForTeam = async (ekipId: string): Promise<boolean> => {
     const q = query(
         collection(db, "talepler"),
         where("atananEkipId", "==", ekipId),
-        where("durum", "in", ["yeni", "islemde", "atanmis", "beklemede"]) // Active statuses
+        where("durum", "in", ["yeni", "islemde", "atandi", "beklemede"]) // Active statuses
     );
     const snapshot = await getDocs(q);
     return !snapshot.empty;

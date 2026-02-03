@@ -151,11 +151,13 @@ const checkAndRestoreAdminProfile = async (user: FirebaseUser): Promise<any | nu
 };
 
 export const onAuthChange = (callback: (user: DNAUser | null) => void) => {
+    let unsubscribe: (() => void) | undefined;
+
     // Initialize auth lazily, then set up listener
     getAuthInstance().then((auth) => {
         if (auth) {
             try {
-                onAuthStateChanged(auth, async (user: FirebaseUser | null) => {
+                const unsubscribe = onAuthStateChanged(auth, async (user: FirebaseUser | null) => {
                     if (user) {
                         if (!user.email) return;
 
@@ -212,8 +214,9 @@ export const onAuthChange = (callback: (user: DNAUser | null) => void) => {
         callback(null);
     });
 
-    // Return a cleanup function
-    return () => { };
+    return () => {
+        if (unsubscribe) unsubscribe();
+    };
 };
 
 export const loginUser = async (email: string, password: string): Promise<ServiceResponse<{ user: DNAUser }>> => {
@@ -302,20 +305,34 @@ export const getCurrentUser = async (): Promise<DNAUser | null> => {
 export const createUser = async (userData: any, creatorEmail?: string, adminAuthPassword?: string): Promise<ServiceResponse<void>> => {
     let secondaryApp: any = null;
     try {
-        console.log("Creating new user (v6 - Lazy Auth) with data:", JSON.stringify(userData));
+        console.log("Creating new user...");
+
+        const mainAuth = await getAuthInstance();
+        if (!mainAuth || !mainAuth.currentUser) {
+            throw new Error("Admin oturumu kapalı görünüyor.");
+        }
+
+        // --- ADMIN RE-AUTHENTICATION (Security Check) ---
+        if (adminAuthPassword) {
+            try {
+                const { EmailAuthProvider, reauthenticateWithCredential } = await import("firebase/auth");
+                const credential = EmailAuthProvider.credential(mainAuth.currentUser.email!, adminAuthPassword);
+                await reauthenticateWithCredential(mainAuth.currentUser, credential);
+                console.log("Admin verified via re-auth.");
+            } catch (authErr: any) {
+                console.error("Admin re-auth failed:", authErr);
+                return { success: false, message: "Yönetici şifresi hatalı. Doğrulama başarısız." };
+            }
+        }
 
         // Create secondary app to create user without logging out admin
         const secondaryAppName = "SecondaryApp-" + new Date().getTime();
         secondaryApp = initializeApp(firebaseConfig, secondaryAppName);
-
-        // Use simple getAuth for secondary app
         const secondaryAuth = getAuth(secondaryApp);
 
         const userCredential = await createUserWithEmailAndPassword(secondaryAuth, userData.email, userData.sifre);
         const newUser = userCredential.user;
-        console.log("User created in Auth:", newUser.uid);
 
-        // IMMEDIATE SIGN OUT from secondary to prevent potential interference
         await signOut(secondaryAuth);
         console.log("Secondary Auth signed out.");
 
@@ -339,7 +356,6 @@ export const createUser = async (userData: any, creatorEmail?: string, adminAuth
         console.log(`Role raw: ${userData.rol} -> normalized: ${normalizedRole}`);
 
         // Check if admin is logged in
-        const mainAuth = await getAuthInstance();
         if (!mainAuth || !mainAuth.currentUser) {
             console.error("CRITICAL: Admin user appears to be logged out! Cannot write to DB.");
             throw new Error("Admin oturumu kapalı görünüyor.");

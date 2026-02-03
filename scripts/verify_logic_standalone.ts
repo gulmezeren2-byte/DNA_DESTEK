@@ -48,7 +48,7 @@ async function simulateDeleteEkip(ekipId: string, mockDbState: any[]) {
     // Check for active tasks
     const activeTasks = mockDbState.filter(t =>
         t.atananEkipId === ekipId &&
-        ["yeni", "islemde", "atanmis", "beklemede"].includes(t.durum)
+        ["yeni", "islemde", "atandi", "beklemede"].includes(t.durum)
     );
 
     const hasActiveTasks = activeTasks.length > 0;

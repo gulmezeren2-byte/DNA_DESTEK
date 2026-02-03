@@ -1,4 +1,5 @@
 import { getApp, getApps, initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -10,7 +11,7 @@ const firebaseConfig = {
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Initialize Firebase App (handle hot reload)
+// Initialize Firebase App
 let app: any;
 try {
   if (getApps().length === 0) {
@@ -35,36 +36,19 @@ try {
   db = {};
 }
 
-// AUTH IS INITIALIZED LAZILY to avoid "Component auth has not been registered yet" error
-// The auth module will be loaded on-demand when getAuthInstance() is first called
-let authInstance: any = null;
-let authInitPromise: Promise<any> | null = null;
+// Initialize Auth
+let auth: any;
+try {
+  auth = getAuth(app);
+  console.log("✅ Auth initialized");
+} catch (e) {
+  console.error("❌ Auth Init Failed:", e);
+  auth = {} as any;
+}
 
-export const getAuthInstance = async () => {
-  if (authInstance) return authInstance;
+// Helper getter
+export const getAuthInstance = async () => auth;
+export const getAuthSync = () => auth;
 
-  if (authInitPromise) {
-    return authInitPromise;
-  }
-
-  authInitPromise = (async () => {
-    try {
-      // Dynamic import to ensure auth module is fully loaded
-      const { getAuth } = await import("firebase/auth");
-      authInstance = getAuth(app);
-      console.log("✅ Auth initialized (lazy)");
-      return authInstance;
-    } catch (e) {
-      console.error("❌ Auth Init Failed:", e);
-      return null;
-    }
-  })();
-
-  return authInitPromise;
-};
-
-// Also provide synchronous access for cases where auth might already be initialized
-export const getAuthSync = () => authInstance;
-
-export { app, db, firebaseConfig };
+export { app, auth, db, firebaseConfig };
 

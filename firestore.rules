@@ -41,14 +41,13 @@ service cloud.firestore {
       );
       
       // Update: Admin can update anyone. Owner can update self.
-      // If Owner updates, they CANNOT escalate privileges.
+      // - If Owner updates, they CANNOT escalate privileges or change 'aktif' status.
       allow update: if isAdmin() || (isOwner(userId) && (
-        request.resource.data.rol == 'musteri' || 
-        (request.resource.data.rol == 'yonetim' && isAdminEmail()) ||
-        request.resource.data.rol == resource.data.rol // Allow update if role doesn't change
+        (request.resource.data.rol == resource.data.rol && request.resource.data.aktif == resource.data.aktif) // Role and Active status must not change for owner update
       ));
       
-      allow delete: if isAdmin();
+      // Admin creation via Management screen
+      allow create: if isAdmin() || (isSignedIn() && isOwner(userId) && request.resource.data.rol == 'musteri');
     }
 
     // Talepler Collection
@@ -59,11 +58,15 @@ service cloud.firestore {
         resource.data.olusturanId == request.auth.uid ||
         resource.data.musteriId == request.auth.uid
       );
-      allow create: if isSignedIn(); // Anyone signed in can create a request
+      allow create: if isSignedIn() && 
+        request.resource.data.olusturanId == request.auth.uid && 
+        request.resource.data.durum == 'yeni' &&
+        request.resource.data.oncelik in ['normal', 'acil'];
       allow update: if isSignedIn() && (
         isAdmin() || 
-        (isTechnician() && (resource.data.atananTeknisyenId == request.auth.uid || resource.data.durum == 'yeni')) ||
-        (resource.data.olusturanId == request.auth.uid && resource.data.durum == 'yeni') // Customers can only update if status is new
+        (isTechnician() && (resource.data.atananTeknisyenId == request.auth.uid || resource.data.durum == 'atandi')) ||
+        (resource.data.olusturanId == request.auth.uid && resource.data.durum == 'yeni' && 
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['baslik', 'aciklama', 'fotograflar', 'guncellemeTarihi']))
       );
     }
 

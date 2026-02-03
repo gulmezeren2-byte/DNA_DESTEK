@@ -19,6 +19,7 @@ import {
     View
 } from 'react-native';
 import OptimizedImage from '../../components/OptimizedImage';
+import { KATEGORILER } from '../../constants';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getProjeler } from '../../services/ekipService';
@@ -162,10 +163,10 @@ export default function YeniTalepScreen() {
     }, []);
 
     const fotografSec = async () => {
-        if (fotograflar.length >= 2) {
+        if (fotograflar.length >= 3) {
             Platform.OS === 'web'
-                ? alert('En fazla 2 fotoğraf ekleyebilirsiniz.')
-                : Alert.alert('Limit', 'En fazla 2 fotoğraf ekleyebilirsiniz.');
+                ? alert('En fazla 3 fotoğraf ekleyebilirsiniz.')
+                : Alert.alert('Limit', 'En fazla 3 fotoğraf ekleyebilirsiniz.');
             return;
         }
 
@@ -365,7 +366,7 @@ export default function YeniTalepScreen() {
         }
     };
 
-    const kategoriler = ['Tesisat', 'Elektrik', 'Boya', 'Mobilya', 'Pencere', 'Kapı', 'Diğer'];
+    const kategoriler = KATEGORILER;
     const projeAdlari = projeler.map((p) => p.ad);
 
     return (
