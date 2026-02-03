@@ -76,15 +76,15 @@ export const getTalepler = async (
             lastVisible = snapshot.docs[snapshot.docs.length - 1];
 
         } else if (rol === 'teknisyen') {
-            // Teknisyen Logic
-            // Geçmiş (Completed) -> Sadece kendi çözdüğü/atandığı ve durumu tamamlanmış olanlar.
-            // Aktif -> Kendi atandığı aktifler VE Havuzdaki yeniler.
+            // Team-based model: Filter by atananEkipId
+            // The 'userId' passed here for technicians should preferably be their Team ID (category)
+            // or we need to handle it inside. 
+            // For now, assuming the caller passes the team ID or we adapt the service.
 
             if (filters.tab === 'gecmis') {
-                // Sadece atananTeknisyenId == user ve durum closed
                 const constraints: QueryConstraint[] = [
-                    where('atananTeknisyenId', '==', userId),
-                    ...buildConstraints(), // durumlar: ['cozuldu', 'iptal', 'kapatildi']
+                    where('atananEkipId', '==', userId),
+                    ...buildConstraints(),
                     orderBy('olusturmaTarihi', 'desc')
                 ];
                 if (lastDoc) constraints.push(startAfter(lastDoc));
@@ -205,9 +205,8 @@ export const subscribeToTalepler = (
 
         } else if (rol === 'teknisyen') {
             if (filters.tab === 'gecmis') {
-                // Sadece Completed
                 const constraints: QueryConstraint[] = [
-                    where('atananTeknisyenId', '==', userId),
+                    where('atananEkipId', '==', userId),
                     ...buildConstraints(),
                     orderBy('olusturmaTarihi', 'desc'),
                     limit(50)
@@ -219,12 +218,10 @@ export const subscribeToTalepler = (
                 }, (error) => callback({ success: false, message: error.message }));
                 unsubscribes.push(unsub);
             } else {
-                // Aktif Tab: Mixed listening
-                // 1. Assigned Active
                 const activeStatuses = filters.durumlar || ['atandi', 'islemde', 'beklemede'];
                 const qAssigned = query(
                     talesRef,
-                    where('atananTeknisyenId', '==', userId),
+                    where('atananEkipId', '==', userId),
                     where('durum', 'in', activeStatuses),
                     orderBy('olusturmaTarihi', 'desc')
                 );

@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     Modal,
     Platform,
     RefreshControl,
@@ -327,8 +328,14 @@ export default function TaleplerimScreen() {
         const confirmed = Platform.OS === 'web'
             ? window.confirm('Bu talebi iptal etmek istediğinizden emin misiniz?')
             : await new Promise((resolve) => {
-                // Alert için mobil
-                resolve(true);
+                Alert.alert(
+                    'Talep İptali',
+                    'Bu talebi iptal etmek istediğinizden emin misiniz?',
+                    [
+                        { text: 'Vazgeç', onPress: () => resolve(false), style: 'cancel' },
+                        { text: 'İptal Et', onPress: () => resolve(true), style: 'destructive' }
+                    ]
+                );
             });
 
         if (confirmed) {
@@ -338,21 +345,28 @@ export default function TaleplerimScreen() {
 
                 // Adminlere bildirim gönder
                 try {
-                    const { collection, query, where, getDocs } = require('firebase/firestore');
+                    const { collection, query, where, getDocs, getDoc, doc } = require('firebase/firestore');
                     const { db } = require('../../firebaseConfig');
                     const { sendPushNotification } = require('../../services/notificationService');
 
                     const adminQuery = query(collection(db, 'users'), where('rol', '==', 'yonetim'));
                     const adminSnaps = await getDocs(adminQuery);
 
-                    adminSnaps.forEach((doc: any) => {
-                        const adminData = doc.data();
-                        if (adminData.pushToken) {
-                            sendPushNotification(
-                                adminData.pushToken,
-                                'Talep İptal Edildi 🚫',
-                                `${seciliTalep.projeAdi}: ${seciliTalep.baslik}`
-                            );
+                    adminSnaps.forEach(async (adminDoc: any) => {
+                        try {
+                            const tokenDoc = await getDoc(doc(db, 'push_tokens', adminDoc.id));
+                            if (tokenDoc.exists()) {
+                                const tokenData = tokenDoc.data();
+                                if (tokenData?.token) {
+                                    sendPushNotification(
+                                        tokenData.token,
+                                        'Talep İptal Edildi 🚫',
+                                        `${seciliTalep.projeAdi}: ${seciliTalep.baslik}`
+                                    );
+                                }
+                            }
+                        } catch (err) {
+                            console.error('Admin token fetch error:', err);
                         }
                     });
                 } catch (notiError) {
@@ -387,21 +401,28 @@ export default function TaleplerimScreen() {
             if (result.success) {
                 // Bildirim Gönder (Sadece Adminlere)
                 try {
-                    const { collection, query, where, getDocs } = require('firebase/firestore');
+                    const { collection, query, where, getDocs, getDoc, doc } = require('firebase/firestore');
                     const { db } = require('../../firebaseConfig');
                     const { sendPushNotification } = require('../../services/notificationService');
 
                     // Adminlere bildirim
                     const adminQuery = query(collection(db, 'users'), where('rol', '==', 'yonetim'));
                     const adminSnaps = await getDocs(adminQuery);
-                    adminSnaps.forEach((doc: any) => {
-                        const adminData = doc.data();
-                        if (adminData.pushToken) {
-                            sendPushNotification(
-                                adminData.pushToken,
-                                'Talep Puanlandı ⭐',
-                                `${secilenPuan} Yıldız - ${seciliTalep.projeAdi}`
-                            );
+                    adminSnaps.forEach(async (adminDoc: any) => {
+                        try {
+                            const tokenDoc = await getDoc(doc(db, 'push_tokens', adminDoc.id));
+                            if (tokenDoc.exists()) {
+                                const tokenData = tokenDoc.data();
+                                if (tokenData?.token) {
+                                    sendPushNotification(
+                                        tokenData.token,
+                                        'Talep Puanlandı ⭐',
+                                        `${secilenPuan} Yıldız - ${seciliTalep.projeAdi}`
+                                    );
+                                }
+                            }
+                        } catch (err) {
+                            console.error('Admin token fetch error:', err);
                         }
                     });
                 } catch (notiError) {

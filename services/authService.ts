@@ -157,7 +157,7 @@ export const onAuthChange = (callback: (user: DNAUser | null) => void) => {
     getAuthInstance().then((auth) => {
         if (auth) {
             try {
-                const unsubscribe = onAuthStateChanged(auth, async (user: FirebaseUser | null) => {
+                unsubscribe = onAuthStateChanged(auth, async (user: FirebaseUser | null) => {
                     if (user) {
                         if (!user.email) return;
 

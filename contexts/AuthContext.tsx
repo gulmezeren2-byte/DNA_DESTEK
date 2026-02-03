@@ -1,4 +1,4 @@
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 import { db } from '../firebaseConfig';
 import { getCurrentUser, loginUser, logoutUser, onAuthChange } from '../services/authService';
@@ -65,11 +65,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
                 try {
                     const token = await registerForPushNotificationsAsync();
                     if (token) {
-                        const userRef = doc(db, 'users', userData.uid);
-                        await updateDoc(userRef, {
-                            pushToken: token
-                        });
-                        console.log('Push Token kaydedildi:', token);
+                        const tokenRef = doc(db, 'push_tokens', userData.uid);
+                        await setDoc(tokenRef, {
+                            token: token,
+                            updatedAt: new Date()
+                        }, { merge: true });
+                        console.log('Push Token kaydedildi (private collection):', token);
                     }
                 } catch (error) {
                     console.error('Push Token kayıt hatası:', error);

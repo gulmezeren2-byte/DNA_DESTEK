@@ -23,7 +23,6 @@ import { ListSkeleton } from '../../components/Skeleton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { db as dbAny } from '../../firebaseConfig';
-import { getAllEkipler } from '../../services/ekipService';
 import { sendPushNotification } from '../../services/notificationService';
 import toast from '../../services/toastService';
 import { Talep } from '../../types';
@@ -147,7 +146,7 @@ export default function TeknisyenScreen() {
         }
     };
 
-    // Realtime Data Loading (Split Strategy)
+    // Realtime Data Loading
     useEffect(() => {
         const unsubscribes: (() => void)[] = [];
 
@@ -156,120 +155,110 @@ export default function TeknisyenScreen() {
             setYukleniyor(true);
 
             try {
-                // 1. Get User's Teams
-                const ekipResult = await getAllEkipler();
-                if (!ekipResult.success || !ekipResult.data) {
-                    setYukleniyor(false);
-                    return;
-                }
-
-                const myTeamIds = ekipResult.data
-                    .filter(e => e.aktif && user.uid && e.uyeler.includes(user.uid))
-                    .map(e => e.id);
-
-                if (myTeamIds.length === 0) {
+                // 1. Get Team Tasks for the technician's category
+                const myTeamId = user.kategori;
+                if (!myTeamId) {
                     setTalepler([]);
                     setYukleniyor(false);
                     return;
                 }
 
-                // 2. STRATEGY: Active Tasks (Guaranteed delivery)
-                // We create a listener for EACH team for active statuses.
-                // This overcomes the limit of combining 'in' operators.
-                const activeStatus = ['yeni', 'atandi', 'islemde', 'beklemede'];
-                // Temporary storage for merge
+                const activeStatus = ['atandi', 'islemde', 'beklemede'];
                 const activeMap = new Map<string, Talep>();
                 const completedMap = new Map<string, Talep>();
+
+                const sortFn = (a: Talep, b: Talep) => {
+                    if (a.oncelik === 'acil' && b.oncelik !== 'acil') return -1;
+                    if (b.oncelik === 'acil' && a.oncelik !== 'acil') return 1;
+                    const da = (a.olusturmaTarihi as any)?.seconds || 0;
+                    const db = (b.olusturmaTarihi as any)?.seconds || 0;
+                    return db - da;
+                };
 
                 const updateState = () => {
                     const activeList = Array.from(activeMap.values());
                     const completedList = Array.from(completedMap.values());
-
-                    // Client-side sort: Acil top, then date
-                    const sortFn = (a: Talep, b: Talep) => {
-                        if (a.oncelik === 'acil' && b.oncelik !== 'acil') return -1;
-                        if (b.oncelik === 'acil' && a.oncelik !== 'acil') return 1;
-                        const da = (a.olusturmaTarihi as any)?.seconds || 0;
-                        const db = (b.olusturmaTarihi as any)?.seconds || 0;
-                        return db - da;
-                    };
-
                     setTalepler([...activeList.sort(sortFn), ...completedList.sort(sortFn)]);
                 };
 
-                // A. Active Listeners (Per Team)
-                for (const teamId of myTeamIds) {
-                    const qActive = query(
-                        collection(db as Firestore, 'talepler'),
-                        where('atananEkipId', '==', teamId),
-                        where('durum', 'in', activeStatus)
-                    );
+                // A. Active Listeners (Primary Team)
+                const qActive = query(
+                    collection(db as Firestore, 'talepler'),
+                    where('atananEkipId', '==', myTeamId),
+                    where('durum', 'in', activeStatus)
+                );
 
-                    const unsub = onSnapshot(qActive, (snap) => {
-                        snap.docChanges().forEach(change => {
-                            const talep = { id: change.doc.id, ...change.doc.data() } as Talep;
-                            if (change.type === 'removed') {
-                                activeMap.delete(talep.id);
-                            } else {
-                                activeMap.set(talep.id, talep);
-                            }
-                        });
-                        updateState();
+                const unsubActive = onSnapshot(qActive, (snapshot) => {
+                    snapshot.docChanges().forEach((change) => {
+                        const talep = { id: change.doc.id, ...change.doc.data() } as Talep;
+                        if (change.type === 'removed') {
+                            activeMap.delete(talep.id);
+                        } else {
+                            activeMap.set(talep.id, talep);
+                        }
                     });
-                    unsubscribes.push(unsub);
-                }
+                    updateState();
+                }, (error) => {
+                    console.error("Active tasks listener error:", error);
+                });
+                unsubscribes.push(unsubActive);
 
-                // B. Completed/Recent Listener (Global for my teams)
-                // Since we can't do 'teamId IN [...]' AND 'durum IN [...]',
-                // We will fetch only 'cozuldu' ones or just the recently updated ones regardless of status,
-                // and filter purely for the "Completed" section.
-                // Simplified: Just fetch recent 20 'cozuldu' tasks for these teams.
+                // B. Completed Tasks (Primary Team - Limited)
+                const qCompleted = query(
+                    collection(db as Firestore, 'talepler'),
+                    where('atananEkipId', '==', myTeamId),
+                    where('durum', '==', 'cozuldu'),
+                    orderBy('olusturmaTarihi', 'desc'),
+                    limit(15)
+                );
 
-                // Note: Firestore limits 'in' to 10 values.
-                const chunks = [];
-                for (let i = 0; i < myTeamIds.length; i += 10) {
-                    chunks.push(myTeamIds.slice(i, i + 10));
-                }
-
-                for (const chunk of chunks) {
-                    const qCompleted = query(
-                        collection(db as Firestore, 'talepler'),
-                        where('atananEkipId', 'in', chunk),
-                        where('durum', '==', 'cozuldu'),
-                        orderBy('cozumTarihi', 'desc'),
-                        limit(20)
-                    );
-
-                    const unsub = onSnapshot(qCompleted, (snap) => {
-                        snap.docChanges().forEach(change => {
-                            const talep = { id: change.doc.id, ...change.doc.data() } as Talep;
-                            if (change.type === 'removed') {
-                                completedMap.delete(talep.id);
-                            } else {
-                                completedMap.set(talep.id, talep);
-                            }
-                        });
-                        updateState();
+                const unsubCompleted = onSnapshot(qCompleted, (snapshot) => {
+                    snapshot.docChanges().forEach((change) => {
+                        const talep = { id: change.doc.id, ...change.doc.data() } as Talep;
+                        if (change.type === 'removed') {
+                            completedMap.delete(talep.id);
+                        } else {
+                            completedMap.set(talep.id, talep);
+                        }
                     });
-                    unsubscribes.push(unsub);
-                }
+                    updateState();
+                }, (error) => {
+                    console.error("Completed tasks listener error:", error);
+                });
+                unsubscribes.push(unsubCompleted);
+
+                // C. Havuz (Pool) - Optional: If we want technicians to see new unassigned tasks
+                const qNew = query(
+                    collection(db as Firestore, 'talepler'),
+                    where('durum', '==', 'yeni'),
+                    limit(20)
+                );
+                const unsubNew = onSnapshot(qNew, (snapshot) => {
+                    snapshot.docChanges().forEach((change) => {
+                        const talep = { id: change.doc.id, ...change.doc.data() } as Talep;
+                        if (change.type === 'removed') {
+                            activeMap.delete(talep.id);
+                        } else {
+                            activeMap.set(talep.id, talep);
+                        }
+                    });
+                    updateState();
+                });
+                unsubscribes.push(unsubNew);
 
                 setYukleniyor(false);
-
             } catch (error) {
-                console.error("Setup error:", error);
+                console.error("initRealtime error:", error);
                 setYukleniyor(false);
             }
         };
 
-        if (user) {
-            initRealtime();
-        }
+        initRealtime();
 
         return () => {
             unsubscribes.forEach(u => u());
         };
-    }, [user]);
+    }, [user?.uid, user?.kategori]);
 
     const onRefresh = useCallback(() => {
         // Realtime olduğu için refresh sadece ekipleri ve bağlantıyı yenilemek için kullanılabilir
