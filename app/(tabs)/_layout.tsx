@@ -3,7 +3,7 @@ import { DrawerContentComponentProps } from '@react-navigation/drawer';
 import { DrawerActions } from '@react-navigation/native';
 import { Drawer } from 'expo-router/drawer';
 import React, { useCallback, useRef } from 'react';
-import { StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { Platform, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import CustomDrawerContent from '../../components/CustomDrawerContent';
 import { useAuth } from '../../contexts/AuthContext';
@@ -119,6 +119,7 @@ export default function Layout() {
             <Drawer.Screen name="explore" options={{ drawerItemStyle: { display: 'none' } }} />
             <Drawer.Screen name="yonetim" options={{ drawerItemStyle: { display: 'none' } }} />
             <Drawer.Screen name="ekipler" options={{ drawerItemStyle: { display: 'none' } }} />
+            <Drawer.Screen name="projeler" options={{ drawerItemStyle: { display: 'none' } }} />
             <Drawer.Screen name="raporlar" options={{ drawerItemStyle: { display: 'none' } }} />
             <Drawer.Screen name="kullanicilar" options={{ drawerItemStyle: { display: 'none' } }} />
           </Drawer>
@@ -159,6 +160,14 @@ export default function Layout() {
                 drawerLabel: 'Ekipler',
                 title: 'Ekipler',
                 drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="people-circle-outline" size={22} color={color} />,
+              }}
+            />
+            <Drawer.Screen
+              name="projeler"
+              options={{
+                drawerLabel: 'Projeler',
+                title: 'Projeler',
+                drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="business-outline" size={22} color={color} />,
               }}
             />
             <Drawer.Screen
@@ -245,6 +254,7 @@ export default function Layout() {
           <Drawer.Screen name="teknisyen" options={{ drawerItemStyle: { display: 'none' } }} />
           <Drawer.Screen name="yonetim" options={{ drawerItemStyle: { display: 'none' } }} />
           <Drawer.Screen name="ekipler" options={{ drawerItemStyle: { display: 'none' } }} />
+          <Drawer.Screen name="projeler" options={{ drawerItemStyle: { display: 'none' } }} />
           <Drawer.Screen name="raporlar" options={{ drawerItemStyle: { display: 'none' } }} />
           <Drawer.Screen name="kullanicilar" options={{ drawerItemStyle: { display: 'none' } }} />
         </Drawer>
@@ -264,11 +274,21 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 8,
+      },
+      web: {
+        // @ts-ignore
+        boxShadow: '0px 4px 8px rgba(0, 0, 0, 0.3)',
+      }
+    }),
     zIndex: 1000,
   },
 });

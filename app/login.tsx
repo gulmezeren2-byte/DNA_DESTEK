@@ -23,7 +23,35 @@ export default function LoginScreen() {
     const [isLoading, setIsLoading] = useState(false);
     const { login } = useAuth();
 
+    // SEC-005 FIX: Brute-force protection
+    const [failedAttempts, setFailedAttempts] = useState(0);
+    const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
+    const [lockoutRemaining, setLockoutRemaining] = useState(0);
+
+    // SEC-005: Lockout timer countdown
+    React.useEffect(() => {
+        if (lockoutUntil) {
+            const interval = setInterval(() => {
+                const remaining = Math.ceil((lockoutUntil - Date.now()) / 1000);
+                if (remaining <= 0) {
+                    setLockoutUntil(null);
+                    setLockoutRemaining(0);
+                    setFailedAttempts(0);
+                } else {
+                    setLockoutRemaining(remaining);
+                }
+            }, 1000);
+            return () => clearInterval(interval);
+        }
+    }, [lockoutUntil]);
+
     const handleLogin = async () => {
+        // SEC-005: Check lockout
+        if (lockoutUntil && Date.now() < lockoutUntil) {
+            Alert.alert('Hesap Kilitli', `Çok fazla başarısız deneme. ${lockoutRemaining} saniye bekleyin.`);
+            return;
+        }
+
         if (!email.trim()) {
             Alert.alert('Uyarı', 'Lütfen e-posta adresinizi girin');
             return;
@@ -38,9 +66,26 @@ export default function LoginScreen() {
         setIsLoading(false);
 
         if (!result.success) {
-            Alert.alert('Giriş Başarısız', result.message);
+            // SEC-005: Track failed attempts
+            const newAttempts = failedAttempts + 1;
+            setFailedAttempts(newAttempts);
+
+            if (newAttempts >= 5) {
+                // Lock for 30 seconds after 5 failed attempts
+                const lockUntil = Date.now() + 30000;
+                setLockoutUntil(lockUntil);
+                setLockoutRemaining(30);
+                Alert.alert('Hesap Kilitli', 'Çok fazla başarısız deneme. 30 saniye bekleyin.');
+            } else {
+                Alert.alert('Giriş Başarısız', `${result.message}\n\nKalan deneme: ${5 - newAttempts}`);
+            }
+        } else {
+            // Reset on success
+            setFailedAttempts(0);
+            setLockoutUntil(null);
         }
     };
+
 
     return (
         <KeyboardAvoidingView

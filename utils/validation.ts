@@ -24,6 +24,7 @@ export const isValidPhone = (phone: string): boolean => {
 
 /**
  * Şifre güçlülüğü kontrolü
+ * SEC-015 FIX: Enhanced password policy
  */
 export const isStrongPassword = (password: string): { valid: boolean; message: string } => {
     if (password.length < 6) {
@@ -32,8 +33,14 @@ export const isStrongPassword = (password: string): { valid: boolean; message: s
     if (password.length > 128) {
         return { valid: false, message: 'Şifre çok uzun' };
     }
+    // SEC-015: Require at least one number or special character
+    const hasComplexity = /[0-9!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password);
+    if (!hasComplexity) {
+        return { valid: false, message: 'Şifre en az bir rakam veya özel karakter içermelidir' };
+    }
     return { valid: true, message: '' };
 };
+
 
 /**
  * Boş string kontrolü

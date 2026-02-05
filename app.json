@@ -16,9 +16,16 @@
       "**/*"
     ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.dnadestek.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
+      "package": "com.dnadestek.app",
+      "versionCode": 2,
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -30,6 +37,14 @@
     "jsEngine": "hermes",
     "plugins": [
       [
+        "expo-build-properties",
+        {
+          "android": {
+            "kotlinVersion": "2.0.21"
+          }
+        }
+      ],
+      [
         "expo-router",
         {
           "asyncRoutes": {
@@ -38,6 +53,18 @@
           }
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true,
+          "default": "development"
+        }
+      },
+      "eas": {
+        "projectId": "5ef3f38e-3474-4a00-9a7a-b3220a5113a2"
+      }
+    },
+    "owner": "erengulmez"
   }
 }

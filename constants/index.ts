@@ -150,10 +150,24 @@ export const APP_CONFIG = {
     PHOTO_MAX_WIDTH: 800,
     PHOTO_QUALITY: 0.7,
     PHOTO_COMPRESS: 0.6,
-    // NOTE: Firestore rules (isAdminEmail function) is the SOURCE OF TRUTH for admin access.
-    // This client-side list is for UI hints only and should be kept in sync manually.
+    /**
+     * SEC-008 WARNING: ADMIN_EMAILS is for CLIENT-SIDE UI HINTS ONLY!
+     * 
+     * THE SOURCE OF TRUTH IS: firestore.rules -> isAdminEmail() function
+     * 
+     * This list does NOT grant admin access. It only controls:
+     * - UI hints (showing admin-like interface elements)
+     * - Client-side role suggestions during signup
+     * 
+     * To change who has admin access, EDIT BOTH:
+     * 1. firestore.rules (isAdminEmail function) - REQUIRED for security
+     * 2. This list - Optional for UI consistency
+     * 
+     * If these get out of sync, Firestore rules will ALWAYS win.
+     */
     ADMIN_EMAILS: ['admin@dnadestek.com', 'eren.gulmez@dnadestek.com'] as string[],
 } as const;
+
 
 // Firebase hata mesajları (Türkçe)
 export const FIREBASE_ERROR_MESSAGES: Record<string, string> = {

@@ -27,6 +27,12 @@ const lightColors = {
     error: '#d32f2f',
     headerBg: '#C62828',
     headerText: '#ffffff',
+    glassBg: 'rgba(255, 255, 255, 0.7)',
+    glassBorder: 'rgba(255, 255, 255, 0.4)',
+    shadowColor: '#000000',
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
 };
 
 const darkColors = {
@@ -43,6 +49,12 @@ const darkColors = {
     error: '#f44336',
     headerBg: '#1e1e1e', // Dark header for dark mode
     headerText: '#ffffff',
+    glassBg: 'rgba(30, 30, 30, 0.7)',
+    glassBorder: 'rgba(255, 255, 255, 0.1)',
+    shadowColor: '#000000',
+    shadowOpacity: 0.3,
+    shadowRadius: 15,
+    elevation: 8,
 };
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);

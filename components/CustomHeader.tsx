@@ -2,9 +2,10 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { getShadowStyle } from '../utils/shadow';
 import Logo from './Logo';
 
 interface CustomHeaderProps {
@@ -22,18 +23,18 @@ export default function CustomHeader({ title, subtitle, showSettings = true, sho
     const getRoleIcon = () => {
         switch (user?.rol) {
             case 'yonetim':
-                return <Ionicons name="briefcase" size={24} color="#7b1fa2" />; // Yönetim - Mor Klas Çanta
+                return <Ionicons name="briefcase" size={20} color="#7b1fa2" />;
             case 'teknisyen':
-                return <MaterialCommunityIcons name="hard-hat" size={24} color="#ef6c00" />; // Teknisyen - Turuncu Baret
+                return <MaterialCommunityIcons name="hard-hat" size={20} color="#ef6c00" />;
             case 'musteri':
             default:
-                return <Ionicons name="home" size={24} color="#1565c0" />; // Müşteri - Mavi Ev
+                return <Ionicons name="home" size={20} color="#1565c0" />;
         }
     };
 
     return (
         <LinearGradient
-            colors={['#1a3a5c', '#203a43', '#2c5364']}
+            colors={isDark ? ['#0f172a', '#1e293b'] : ['#1a3a5c', '#2c5364']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.header}
@@ -41,48 +42,56 @@ export default function CustomHeader({ title, subtitle, showSettings = true, sho
             <View style={styles.headerTop}>
                 <View style={styles.leftContainer}>
                     {showBackButton && (
-                        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                            <Ionicons name="arrow-back" size={24} color="#fff" />
-                        </TouchableOpacity>
+                        <Pressable
+                            onPress={() => router.back()}
+                            style={({ pressed }) => [styles.backButton, { opacity: pressed ? 0.7 : 1 }]}
+                        >
+                            <Ionicons name="chevron-back" size={24} color="#fff" />
+                        </Pressable>
                     )}
 
-                    <View style={{ gap: 4 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                            <Logo size="md" variant="glass" />
+                    <View style={styles.titleContainer}>
+                        <View style={styles.logoRow}>
+                            <Logo size="sm" variant="glass" />
+                            <View>
+                                <Text style={styles.headerTitle}>{title || 'DNA DESTEK'}</Text>
+                                <Text style={styles.headerSubtitle}>
+                                    {subtitle || 'Yapı & Teknik Çözüm'}
+                                </Text>
+                            </View>
                         </View>
-                        {/* Eğer subtitle varsa göster, yoksa varsayılan slogan */}
-                        <Text style={styles.headerSubtitle}>
-                            {subtitle || 'Yapı & Teknik Çözüm Merkezi'}
-                        </Text>
                     </View>
                 </View>
 
                 {showSettings && (
-                    <TouchableOpacity style={styles.settingsButton} onPress={() => router.push('/ayarlar')}>
-                        <Ionicons name="settings-outline" size={22} color="#fff" />
-                    </TouchableOpacity>
+                    <Pressable
+                        style={({ pressed }) => [styles.settingsButton, { opacity: pressed ? 0.7 : 1 }]}
+                        onPress={() => router.push('/ayarlar')}
+                    >
+                        <Ionicons name="settings-sharp" size={20} color="#fff" />
+                    </Pressable>
                 )}
             </View>
 
-            {/* User Card - showBackButton false ise (Genellikle ana sayfalarda) */}
             {!showBackButton && (
-                <View style={[styles.userInfo, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
-                    <View style={[styles.userAvatar, { backgroundColor: '#fff' }]}>
+                <View style={styles.userInfo}>
+                    <View style={styles.userAvatar}>
                         {getRoleIcon()}
                     </View>
                     <View style={styles.userTextContainer}>
                         <Text style={styles.userName}>{user?.ad} {user?.soyad}</Text>
-                        <Text style={styles.userEmail}>
-                            {user?.rol ? user.rol.toUpperCase() : 'KULLANICI'}
-                        </Text>
+                        <View style={styles.roleBadge}>
+                            <Text style={styles.userRole}>
+                                {user?.rol?.toUpperCase() || 'KULLANICI'}
+                            </Text>
+                        </View>
                     </View>
                 </View>
             )}
 
-            {/* Başlık (BackButton true ise ve title varsa, logo altına şık bir başlık ekle) */}
             {showBackButton && title && (
-                <View style={{ marginTop: 15, paddingLeft: 4 }}>
-                    <Text style={styles.screenTitle}>{title}</Text>
+                <View style={styles.largeTitleContainer}>
+                    <Text style={styles.largeTitle}>{title}</Text>
                 </View>
             )}
         </LinearGradient>
@@ -91,88 +100,102 @@ export default function CustomHeader({ title, subtitle, showSettings = true, sho
 
 const styles = StyleSheet.create({
     header: {
-        paddingTop: 50,
+        paddingTop: 55,
         paddingBottom: 25,
         paddingHorizontal: 20,
-        borderBottomLeftRadius: 30,
-        borderBottomRightRadius: 30,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 10,
-        elevation: 8,
+        borderBottomLeftRadius: 32,
+        borderBottomRightRadius: 32,
+        ...getShadowStyle(10, '#000', 0.2, 12, { width: 0, height: 4 }),
     },
     headerTop: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: 5
+        alignItems: 'center',
     },
     leftContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12
+        gap: 12,
+        flex: 1,
+    },
+    titleContainer: {
+        flex: 1,
+    },
+    logoRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
     },
     backButton: {
         padding: 8,
-        backgroundColor: 'rgba(255,255,255,0.15)',
-        borderRadius: 12,
-        marginRight: 4
+        backgroundColor: 'rgba(255,255,255,0.12)',
+        borderRadius: 14,
+    },
+    headerTitle: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#fff',
+        letterSpacing: 0.5,
     },
     headerSubtitle: {
-        fontSize: 12,
-        color: 'rgba(255,255,255,0.7)',
-        fontWeight: '500',
-        letterSpacing: 0.5
+        fontSize: 10,
+        color: 'rgba(255,255,255,0.6)',
+        fontWeight: '600',
+        textTransform: 'uppercase',
+        letterSpacing: 1,
     },
     settingsButton: {
-        padding: 8,
-        backgroundColor: 'rgba(255,255,255,0.15)',
-        borderRadius: 12
+        padding: 10,
+        backgroundColor: 'rgba(255,255,255,0.12)',
+        borderRadius: 14,
     },
     userInfo: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginTop: 15,
-        padding: 12,
-        borderRadius: 16,
+        marginTop: 20,
+        padding: 14,
+        borderRadius: 20,
+        backgroundColor: 'rgba(255,255,255,0.08)',
         borderWidth: 1,
         borderColor: 'rgba(255,255,255,0.1)',
     },
     userAvatar: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
+        width: 40,
+        height: 40,
+        borderRadius: 14,
+        backgroundColor: '#fff',
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 2
-    },
-    userAvatarText: {
-        fontSize: 16,
-        fontWeight: 'bold',
+        ...getShadowStyle(2, '#000', 0.1, 4, { width: 0, height: 2 }),
     },
     userTextContainer: {
-        marginLeft: 12
+        marginLeft: 14,
+        flex: 1,
     },
     userName: {
         fontSize: 16,
-        fontWeight: 'bold',
-        color: '#fff'
-    },
-    userEmail: {
-        fontSize: 11,
-        fontWeight: '600',
-        color: 'rgba(255,255,255,0.7)',
-        marginTop: 2
-    },
-    screenTitle: {
-        fontSize: 26,
-        fontWeight: '800',
+        fontWeight: '700',
         color: '#fff',
-        letterSpacing: 0.5
+    },
+    roleBadge: {
+        alignSelf: 'flex-start',
+        marginTop: 2,
+    },
+    userRole: {
+        fontSize: 10,
+        fontWeight: '800',
+        color: 'rgba(255,255,255,0.5)',
+        letterSpacing: 0.5,
+    },
+    largeTitleContainer: {
+        marginTop: 20,
+        paddingLeft: 4,
+    },
+    largeTitle: {
+        fontSize: 28,
+        fontWeight: '900',
+        color: '#fff',
+        letterSpacing: -0.5,
     }
 });
+

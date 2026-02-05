@@ -1,13 +1,34 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import React from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import React, { useEffect } from 'react';
+import { Image, Platform, StyleSheet, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 
 interface LogoProps {
     size?: 'sm' | 'md' | 'lg' | 'xl';
     variant?: 'light' | 'dark' | 'glass';
+    animate?: boolean;
 }
 
-export default function Logo({ size = 'md', variant = 'light' }: LogoProps) {
+export default function Logo({ size = 'md', variant = 'light', animate = true }: LogoProps) {
+    const scale = useSharedValue(1);
+
+    useEffect(() => {
+        if (animate) {
+            scale.value = withRepeat(
+                withSequence(
+                    withTiming(1.05, { duration: 2000 }),
+                    withTiming(1, { duration: 2000 })
+                ),
+                -1,
+                true
+            );
+        }
+    }, [animate]);
+
+    const animatedStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: scale.value }],
+    }));
+
     const getDimensions = () => {
         switch (size) {
             case 'sm': return 40;
@@ -20,40 +41,35 @@ export default function Logo({ size = 'md', variant = 'light' }: LogoProps) {
 
     const dim = getDimensions();
 
-    // Gradient colors based on variant
     const getGradientColors = () => {
         if (variant === 'dark') return ['#1a3a5c', '#0d1b2a'] as const;
-        if (variant === 'glass') return ['rgba(255,255,255,0.3)', 'rgba(255,255,255,0.1)'] as const;
-        return ['#ffffff', '#f0f0f0'] as const; // light
+        if (variant === 'glass') return ['rgba(255,255,255,0.4)', 'rgba(255,255,255,0.1)'] as const;
+        return ['#ffffff', '#f0f0f0'] as const;
     };
 
     return (
-        <View style={[styles.container, { width: dim, height: dim }]}>
-            {/* Outer Glow/Shadow */}
-            <View style={[styles.glow, { width: dim, height: dim, borderRadius: dim / 2 }]} />
+        <Animated.View style={[styles.container, { width: dim, height: dim }, animatedStyle]}>
+            <View style={[styles.glow, { width: dim, height: dim, borderRadius: dim / 2, backgroundColor: variant === 'glass' ? 'rgba(255,255,255,0.2)' : 'rgba(26, 58, 92, 0.4)' }]} />
 
-            {/* Main Circle with Gradient */}
             <LinearGradient
                 colors={getGradientColors()}
                 style={[styles.circle, { width: dim, height: dim, borderRadius: dim / 2 }]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
             >
-                {/* Inner White Border/Ring for definition */}
-                <View style={[styles.innerRing, { borderRadius: dim / 2, opacity: variant === 'glass' ? 0.5 : 0.8, zIndex: 2 }]} />
+                <View style={[styles.innerRing, { borderRadius: dim / 2, opacity: variant === 'glass' ? 0.3 : 0.6 }]} />
 
-                {/* Real DNA Logo Image (Strictly Circular Masked) */}
                 <Image
                     source={require('../assets/logo.png')}
                     style={{
-                        width: '100%',
-                        height: '100%',
-                        borderRadius: dim / 2, // Ensures the image itself is clipped to a circle
+                        width: '85%',
+                        height: '85%',
+                        borderRadius: (dim * 0.85) / 2,
                     }}
-                    resizeMode="cover" // Cover ensures it fills the circle entirely
+                    resizeMode="contain"
                 />
             </LinearGradient>
-        </View>
+        </Animated.View>
     );
 }
 
@@ -61,30 +77,40 @@ const styles = StyleSheet.create({
     container: {
         alignItems: 'center',
         justifyContent: 'center',
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.3,
-        shadowRadius: 12,
-        elevation: 8,
+        ...Platform.select({
+            ios: {
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.2,
+                shadowRadius: 10,
+            },
+            android: {
+                elevation: 6,
+            },
+            web: {
+                // @ts-ignore
+                boxShadow: '0px 8px 10px rgba(0, 0, 0, 0.2)',
+            }
+        }),
     },
     glow: {
         position: 'absolute',
-        backgroundColor: 'rgba(26, 58, 92, 0.4)',
-        transform: [{ scale: 1.1 }],
-        opacity: 0.5,
+        transform: [{ scale: 1.15 }],
+        opacity: 0.4,
     },
     circle: {
         alignItems: 'center',
         justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.2)',
+        borderWidth: 1.5,
+        borderColor: 'rgba(255,255,255,0.25)',
         overflow: 'hidden',
     },
     innerRing: {
         position: 'absolute',
-        width: '90%',
-        height: '90%',
-        borderWidth: 2,
-        borderColor: 'rgba(255,255,255,0.5)',
+        width: '92%',
+        height: '92%',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.4)',
     }
 });
+

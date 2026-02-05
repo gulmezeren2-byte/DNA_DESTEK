@@ -1,9 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import * as Sharing from 'expo-sharing';
 import { collection, getCountFromServer, getDocs, orderBy, query, where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import {
+    Alert,
     Platform,
     RefreshControl,
     ScrollView,
@@ -14,10 +17,11 @@ import {
     View,
     useWindowDimensions
 } from 'react-native';
-import { BarChart, LineChart, PieChart, ProgressChart } from 'react-native-chart-kit';
+import { BarChart, LineChart, PieChart } from 'react-native-chart-kit';
 import { FadeInView } from '../../components/AnimatedList';
-import Logo from '../../components/Logo';
 import { ReportSkeleton } from '../../components/Skeleton';
+import GlassCard from '../../components/ui/GlassCard';
+import StatsWidget from '../../components/ui/StatsWidget';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { db } from '../../firebaseConfig';
@@ -25,6 +29,7 @@ import { getAllEkipler } from '../../services/ekipService';
 
 interface Talep {
     id: string;
+    baslik?: string;
     durum: string;
     kategori: string;
     oncelik: string;
@@ -45,71 +50,55 @@ interface Ekip {
 }
 
 const durumRenkleri: Record<string, string> = {
-    yeni: '#42a5f5',
-    atandi: '#ffb74d',
-    islemde: '#66bb6a',
-    beklemede: '#f48fb1',
-    cozuldu: '#26a69a',
-    iptal: '#ef5350',
+    yeni: '#818cf8',
+    atandi: '#fbbf24',
+    islemde: '#10b981',
+    beklemede: '#f472b6',
+    cozuldu: '#06b6d4',
+    iptal: '#f87171',
 };
 
 const kategoriRenkleri = ['#8b5cf6', '#06b6d4', '#f59e0b', '#ef4444', '#10b981', '#ec4899', '#6366f1'];
 
 export default function RaporlarScreen() {
-    const { user, isYonetim } = useAuth();
+    const { user, isYonetim, isBoardMember } = useAuth();
     const { isDark, colors } = useTheme();
     const router = useRouter();
     const { width: windowWidth } = useWindowDimensions();
 
-    // SEC-003 FIX: Immediate role guard - prevents content flash
     if (!isYonetim) {
         return (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? '#121212' : '#fff' }}>
-                <Ionicons name="lock-closed" size={64} color={isDark ? '#666' : '#ccc'} />
-                <Text style={{ marginTop: 16, fontSize: 18, color: isDark ? '#aaa' : '#666' }}>
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+                <Ionicons name="lock-closed" size={64} color={colors.textMuted} />
+                <Text style={{ marginTop: 16, fontSize: 18, color: colors.textSecondary }}>
                     Bu sayfaya erişim yetkiniz yok
                 </Text>
                 <TouchableOpacity
                     onPress={() => router.replace('/(tabs)')}
-                    style={{ marginTop: 24, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: colors.primary, borderRadius: 8 }}
+                    style={{ marginTop: 24, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: colors.primary, borderRadius: 12 }}
                 >
-                    <Text style={{ color: '#fff', fontWeight: '600' }}>Ana Sayfaya Dön</Text>
+                    <Text style={{ color: '#fff', fontWeight: 'bold' }}>Ana Sayfaya Dön</Text>
                 </TouchableOpacity>
             </View>
         );
     }
 
-    // Responsive Hesaplama
-    // Web'de max-width: 1600px olsun (Büyük ekranlar için)
     const isWeb = Platform.OS === 'web';
-    const containerWidth = isWeb ? Math.min(windowWidth, 1600) : windowWidth;
-
-    // Padding Hesaplaması:
-    // Content Padding: 16 (sol) + 16 (sağ) = 32
-    // Card Padding: 20 (sol) + 20 (sağ) = 40
-    // Toplam Padding: 72px
-    // Güvenlik Payı: 8px -> Toplam 80px çıkarılmalı
-    const chartWidth = containerWidth - 80;
-
-    // Web için yan yana grafiklerin genişliği
-    // (Container - Aradaki Boşluk - Paddingler) / 2
-    const splitChartWidth = isWeb ? (containerWidth - 16 - 80) / 2 : chartWidth;
+    const containerWidth = isWeb ? Math.min(windowWidth, 1200) : windowWidth;
+    const horizontalPadding = 40;
+    const chartWidth = containerWidth - horizontalPadding;
 
     const [yukleniyor, setYukleniyor] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [talepler, setTalepler] = useState<Talep[]>([]);
     const [ekipler, setEkipler] = useState<Ekip[]>([]);
     const [filterDays, setFilterDays] = useState(30);
-
-    // Global Counts State
     const [globalStats, setGlobalStats] = useState({ toplam: 0, acik: 0, cozuldu: 0, acil: 0 });
-
 
     const verileriYukle = async () => {
         try {
             const talesRef = collection(db, 'talepler');
 
-            // 1. Global İstatistikleri Çek (Server-Side Count)
             const qTotal = query(talesRef);
             const qOpen = query(talesRef, where('durum', 'in', ['yeni', 'atandi', 'islemde', 'beklemede']));
             const qSolved = query(talesRef, where('durum', '==', 'cozuldu'));
@@ -129,7 +118,6 @@ export default function RaporlarScreen() {
                 acil: snapUrgent.data().count
             });
 
-            // 2. Grafikler İçin Veri Çek (Date Range Filtered)
             const cutoffDate = new Date();
             cutoffDate.setDate(cutoffDate.getDate() - filterDays);
 
@@ -143,7 +131,6 @@ export default function RaporlarScreen() {
             const talepData = talepSnapshot.docs.map(d => ({ id: d.id, ...d.data() })) as Talep[];
             setTalepler(talepData);
 
-            // 3. Ekipleri Yükle
             const ekipResult = await getAllEkipler();
             if (ekipResult.success && ekipResult.data) {
                 setEkipler(ekipResult.data as Ekip[]);
@@ -159,376 +146,381 @@ export default function RaporlarScreen() {
         verileriYukle();
     }, [filterDays]);
 
-    // İstatistik Hesaplamaları 
-    const globalCozumOrani = globalStats.toplam > 0 ? Math.round((globalStats.cozuldu / globalStats.toplam) * 100) : 0;
-    const toplam = talepler.length;
+    // --- Advanced Analytics Calculations ---
 
-    // Durum Dağılımı (Pie Chart)
-    const durumSayilari: Record<string, number> = {};
-    talepler.forEach(t => {
-        durumSayilari[t.durum] = (durumSayilari[t.durum] || 0) + 1;
-    });
-
-    const pieData = Object.entries(durumSayilari).map(([durum, sayi], index) => ({
-        name: durum.charAt(0).toUpperCase() + durum.slice(1),
-        population: sayi,
-        color: durumRenkleri[durum] || '#999',
-        legendFontColor: colors.text,
-        legendFontSize: 12,
-    }));
-
-    // Kategori Dağılımı (Bar Chart)
-    const kategoriSayilari: Record<string, number> = {};
-    talepler.forEach(t => {
-        if (t.kategori) {
-            kategoriSayilari[t.kategori] = (kategoriSayilari[t.kategori] || 0) + 1;
+    // 1. Technician Performance
+    const techStats = talepler.reduce((acc, t) => {
+        if (t.atananTeknisyenAdi && t.durum === 'cozuldu') {
+            const name = t.atananTeknisyenAdi;
+            if (!acc[name]) acc[name] = { count: 0, totalSLA: 0 };
+            acc[name].count += 1;
+            if (t.olusturmaTarihi && t.cozumTarihi) {
+                acc[name].totalSLA += (t.cozumTarihi.seconds - t.olusturmaTarihi.seconds) / 3600;
+            }
         }
-    });
+        return acc;
+    }, {} as Record<string, { count: number, totalSLA: number }>);
 
-    const kategoriLabels = Object.keys(kategoriSayilari).slice(0, 6);
-    const kategoriValues = kategoriLabels.map(k => kategoriSayilari[k]);
-
-    const barData = {
-        labels: kategoriLabels.map(l => l.length > 6 ? l.slice(0, 6) + '..' : l),
-        datasets: [{ data: kategoriValues.length > 0 ? kategoriValues : [0] }],
-    };
-
-    // Proje Bazlı (Liste)
-    const projeSayilari: Record<string, number> = {};
-    talepler.forEach(t => {
-        if (t.projeAdi) {
-            projeSayilari[t.projeAdi] = (projeSayilari[t.projeAdi] || 0) + 1;
-        }
-    });
-
-    const projeLabels = Object.keys(projeSayilari).slice(0, 5);
-
-    // Ekip Performansı
-    interface IEkipStats {
-        cozulenSayisi: number;
-        toplamPuan: number;
-        puanlananIsSayisi: number;
-    }
-    const ekipPerformans: Record<string, IEkipStats> = {};
-
-    talepler.filter(t => t.durum === 'cozuldu' && t.atananEkipAdi).forEach(t => {
-        if (!ekipPerformans[t.atananEkipAdi!]) {
-            ekipPerformans[t.atananEkipAdi!] = { cozulenSayisi: 0, toplamPuan: 0, puanlananIsSayisi: 0 };
-        }
-        ekipPerformans[t.atananEkipAdi!].cozulenSayisi += 1;
-        if (t.puan) {
-            ekipPerformans[t.atananEkipAdi!].toplamPuan += t.puan;
-            ekipPerformans[t.atananEkipAdi!].puanlananIsSayisi += 1;
-        }
-    });
-
-    const siraliEkipler = Object.entries(ekipPerformans)
-        .sort((a, b) => b[1].cozulenSayisi - a[1].cozulenSayisi)
+    const techLeaderboard = Object.entries(techStats)
+        .map(([name, data]) => ({ name, count: data.count, avgSLA: data.count > 0 ? (data.totalSLA / data.count).toFixed(1) : "0" }))
+        .sort((a, b) => b.count - a.count)
         .slice(0, 5);
 
-    // Trend Chart
-    const simdi = Date.now();
-    const gunlukTalepler: number[] = [];
-    const step = Math.ceil(filterDays / 7);
+    // 2. Project Hotspots
+    const projectStats = talepler.reduce((acc, t) => {
+        const pName = t.projeAdi || 'Belirtilmemiş';
+        acc[pName] = (acc[pName] || 0) + 1;
+        return acc;
+    }, {} as Record<string, number>);
 
-    for (let i = filterDays - 1; i >= 0; i--) {
-        const gunBaslangic = simdi - (i + 1) * 24 * 60 * 60 * 1000;
-        const gunBitis = simdi - i * 24 * 60 * 60 * 1000;
+    const projectHotspots = Object.entries(projectStats)
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5);
 
-        const sayi = talepler.filter(t => {
-            if (!t.olusturmaTarihi) return false;
-            const tarih = t.olusturmaTarihi.seconds * 1000;
-            return tarih >= gunBaslangic && tarih < gunBitis;
-        }).length;
-
-        gunlukTalepler.push(sayi);
-    }
-
-    const chartLabels = gunlukTalepler.map((_, index) => {
-        if (index % step === 0 || index === gunlukTalepler.length - 1) {
-            const dateVal = new Date(simdi - (filterDays - 1 - index) * 24 * 60 * 60 * 1000);
-            return `${dateVal.getDate()}/${dateVal.getMonth() + 1}`;
+    // 3. Status Lifespan & Priority Impact
+    const priorityVelocity = talepler.reduce((acc, t) => {
+        if (t.durum === 'cozuldu' && t.olusturmaTarihi && t.cozumTarihi) {
+            const priority = t.oncelik || 'normal';
+            if (!acc[priority]) acc[priority] = { count: 0, totalTime: 0 };
+            acc[priority].count += 1;
+            acc[priority].totalTime += (t.cozumTarihi.seconds - t.olusturmaTarihi.seconds) / 3600;
         }
-        return '';
-    });
+        return acc;
+    }, {} as Record<string, { count: number, totalTime: number }>);
 
-    const lineData = {
-        labels: chartLabels,
-        datasets: [{ data: gunlukTalepler.length > 0 ? gunlukTalepler : [0] }],
-    };
+    // 4. Daily Trend Analysis
+    const dailyTrend = talepler.reduce((acc, t) => {
+        if (t.olusturmaTarihi) {
+            const date = new Date(t.olusturmaTarihi.seconds * 1000).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' });
+            acc[date] = (acc[date] || 0) + 1;
+        }
+        return acc;
+    }, {} as Record<string, number>);
+
+    const trendData = Object.entries(dailyTrend)
+        .sort((a, b) => {
+            const [d1, m1] = a[0].split('.');
+            const [d2, m2] = b[0].split('.');
+            return new Date(2026, parseInt(m1) - 1, parseInt(d1)).getTime() - new Date(2026, parseInt(m2) - 1, parseInt(d2)).getTime();
+        })
+        .slice(-7); // Last 7 unique days with activity
+
+    // --- End Calculations ---
+
+    const cozulmusTarihliTalepler = talepler.filter(t => t.durum === 'cozuldu' && t.olusturmaTarihi && t.cozumTarihi);
+    const averageSLA = cozulmusTarihliTalepler.length > 0
+        ? cozulmusTarihliTalepler.reduce((acc, t) => {
+            const diff = (t.cozumTarihi!.seconds - t.olusturmaTarihi!.seconds) / 3600;
+            return acc + diff;
+        }, 0) / cozulmusTarihliTalepler.length
+        : 0;
+
+    const puanliTalepler = talepler.filter(t => t.puan && t.puan > 0);
+    const averageScore = puanliTalepler.length > 0
+        ? (puanliTalepler.reduce((acc, t) => acc + (t.puan || 0), 0) / puanliTalepler.length).toFixed(1)
+        : "0.0";
 
     const chartConfig = {
-        backgroundColor: colors.card,
-        backgroundGradientFrom: isDark ? '#1e293b' : '#ffffff',
-        backgroundGradientTo: isDark ? '#0f172a' : '#f8fafc',
-        decimalPlaces: 0,
-        color: (opacity = 1) => isDark ? `rgba(129, 140, 248, ${opacity})` : `rgba(99, 102, 241, ${opacity})`,
+        backgroundGradientFrom: colors.card,
+        backgroundGradientTo: colors.card,
+        color: (opacity = 1) => isDark ? `rgba(129, 140, 248, ${opacity})` : `rgba(79, 70, 229, ${opacity})`,
         labelColor: () => colors.textSecondary,
-        style: { borderRadius: 16 },
-        propsForDots: {
-            r: '5',
-            strokeWidth: '2',
-            stroke: colors.primary,
-        },
-        propsForBackgroundLines: {
-            strokeDasharray: '',
-            stroke: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-        },
+        strokeWidth: 2,
+        barPercentage: 0.6,
+        useShadowColorFromDataset: false,
+        decimalPlaces: 0,
     };
 
-    if (yukleniyor) {
-        return (
-            <View style={[styles.container, { backgroundColor: colors.background }]}>
-                <ReportSkeleton />
-            </View>
-        );
-    }
+    const exportToCSV = async () => {
+        try {
+            const header = "ID,Baslik,Kategori,Durum,Olusturma,Cozum,Puan\n";
+            const rows = talepler.map(t => {
+                const created = t.olusturmaTarihi ? new Date(t.olusturmaTarihi.seconds * 1000).toLocaleDateString('tr-TR') : '';
+                const solved = t.cozumTarihi ? new Date(t.cozumTarihi.seconds * 1000).toLocaleDateString('tr-TR') : '';
+                return `${t.id},"${t.baslik || ''}",${t.kategori},${t.durum},${created},${solved},${t.puan || 0}`;
+            }).join("\n");
+
+            const csvContent = header + rows;
+            // @ts-ignore
+            const fileUri = (FileSystem.documentDirectory || '') + `DNA_RAPOR_${new Date().getTime()}.csv`;
+            await FileSystem.writeAsStringAsync(fileUri, csvContent);
+
+            if (await Sharing.isAvailableAsync()) {
+                await Sharing.shareAsync(fileUri);
+            }
+        } catch (err) {
+            Alert.alert("Hata", "Rapor dışa aktarılamadı.");
+        }
+    };
+
+    if (yukleniyor) return <ReportSkeleton />;
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
             <StatusBar barStyle="light-content" />
 
-            {/* Header */}
             <LinearGradient
-                colors={['#1a3a5c', '#203a43', '#2c5364']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
+                colors={isDark ? ['#0f172a', '#1e293b'] : ['#1a3a5c', '#2c5364']}
                 style={styles.header}
             >
-                <View style={[styles.headerTop, isWeb && { maxWidth: 1600, alignSelf: 'center', width: '100%' }]}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                        <Ionicons name="arrow-back" size={24} color="#fff" />
+                <View style={styles.headerContent}>
+                    <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
+                        <Ionicons name="chevron-back" size={24} color="#fff" />
                     </TouchableOpacity>
-                    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                        <Logo size="sm" variant="glass" />
-                        <View>
-                            <Text style={styles.headerTitle}>Raporlar</Text>
-                            <Text style={styles.headerSubtitle}>Analiz & İstatistikler</Text>
-                        </View>
+                    <View style={styles.headerText}>
+                        <Text style={styles.title}>Yönetim Paneli</Text>
+                        <Text style={styles.subtitle}>Sistem Analitiği ve Raporlama</Text>
                     </View>
-                    <TouchableOpacity onPress={() => { setRefreshing(true); verileriYukle(); }} style={styles.refreshButton}>
-                        <Ionicons name="refresh" size={20} color="#fff" />
-                    </TouchableOpacity>
+                    <View style={styles.headerActions}>
+                        {!isBoardMember && (
+                            <TouchableOpacity onPress={exportToCSV} style={styles.iconBtn}>
+                                <Ionicons name="share-outline" size={22} color="#fff" />
+                            </TouchableOpacity>
+                        )}
+                        <TouchableOpacity onPress={() => { setRefreshing(true); verileriYukle(); }} style={styles.iconBtn}>
+                            <Ionicons name="refresh-outline" size={22} color="#fff" />
+                        </TouchableOpacity>
+                    </View>
                 </View>
             </LinearGradient>
 
             <ScrollView
                 style={styles.content}
-                contentContainerStyle={[styles.scrollContent, isWeb && { maxWidth: 1600, alignSelf: 'center', width: '100%', paddingHorizontal: 0 }]}
-                showsVerticalScrollIndicator={false}
-                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); verileriYukle(); }} colors={[colors.primary]} />}
+                contentContainerStyle={styles.scrollContent}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); verileriYukle(); }} />}
             >
-                {/* Filtre Butonları */}
-                <View style={styles.filterContainer}>
-                    {[7, 30, 90].map((day) => (
+                {/* Time Range Selector */}
+                <View style={styles.filterRow}>
+                    {[7, 30, 90].map(d => (
                         <TouchableOpacity
-                            key={day}
-                            style={[
-                                styles.filterButton,
-                                filterDays === day && { backgroundColor: colors.primary },
-                                { borderColor: colors.border }
-                            ]}
-                            onPress={() => setFilterDays(day)}
+                            key={d}
+                            onPress={() => setFilterDays(d)}
+                            style={[styles.filterBtn, filterDays === d && { backgroundColor: colors.primary, borderColor: colors.primary }]}
                         >
-                            <Text style={[
-                                styles.filterText,
-                                filterDays === day ? { color: '#fff' } : { color: colors.text }
-                            ]}>
-                                Son {day} Gün
+                            <Text style={[styles.filterBtnText, { color: filterDays === d ? '#fff' : colors.textSecondary }]}>
+                                {d} Gün
                             </Text>
                         </TouchableOpacity>
                     ))}
                 </View>
 
-                {/* Özet Kartlar (Global Stats) */}
-                <FadeInView delay={0} style={styles.summaryContainer}>
-                    <View style={[styles.summaryCard, { backgroundColor: '#818cf8', flexBasis: isWeb ? '23%' : '48%' }]}>
-                        <Ionicons name="documents" size={24} color="#fff" />
-                        <Text style={styles.summaryNumber}>{globalStats.toplam}</Text>
-                        <Text style={styles.summaryLabel}>Toplam</Text>
-                    </View>
-                    <View style={[styles.summaryCard, { backgroundColor: '#f59e0b', flexBasis: isWeb ? '23%' : '48%' }]}>
-                        <Ionicons name="time" size={24} color="#fff" />
-                        <Text style={styles.summaryNumber}>{globalStats.acik}</Text>
-                        <Text style={styles.summaryLabel}>Açık</Text>
-                    </View>
-                    <View style={[styles.summaryCard, { backgroundColor: '#10b981', flexBasis: isWeb ? '23%' : '48%' }]}>
-                        <Ionicons name="checkmark-circle" size={24} color="#fff" />
-                        <Text style={styles.summaryNumber}>{globalStats.cozuldu}</Text>
-                        <Text style={styles.summaryLabel}>Çözüldü</Text>
-                    </View>
-                    <View style={[styles.summaryCard, { backgroundColor: '#ef4444', flexBasis: isWeb ? '23%' : '48%' }]}>
-                        <Ionicons name="alert-circle" size={24} color="#fff" />
-                        <Text style={styles.summaryNumber}>{globalStats.acil}</Text>
-                        <Text style={styles.summaryLabel}>Acil</Text>
-                    </View>
+                {/* Primary Stats Grid */}
+                <View style={styles.statsGrid}>
+                    <StatsWidget
+                        title="Toplam Talep"
+                        value={globalStats.toplam}
+                        icon="documents"
+                        color="#6366f1"
+                        description="Sistemdeki tüm kayıtlar"
+                    />
+                    <StatsWidget
+                        title="Açık İşler"
+                        value={globalStats.acik}
+                        icon="time"
+                        color="#f59e0b"
+                        trend={{ value: `${Math.round((globalStats.acik / (globalStats.toplam || 1)) * 100)}%`, isUp: false }}
+                    />
+                </View>
+                <View style={styles.statsGrid}>
+                    <StatsWidget
+                        title="Çözüldü"
+                        value={globalStats.cozuldu}
+                        icon="checkmark-done-circle"
+                        color="#10b981"
+                        trend={{ value: 'Yüksek', isUp: true }}
+                    />
+                    <StatsWidget
+                        title="Memnuniyet"
+                        value={averageScore}
+                        icon="star"
+                        color="#facc15"
+                        description={`${puanliTalepler.length} değerlendirme`}
+                    />
+                </View>
+
+                {/* SLA Highlight - Hidden for Board Members */}
+                {!isBoardMember && (
+                    <FadeInView delay={200}>
+                        <GlassCard style={styles.slaCard}>
+                            <View style={styles.slaHeader}>
+                                <View style={styles.slaIcon}>
+                                    <Ionicons name="flash" size={24} color="#ef4444" />
+                                </View>
+                                <View>
+                                    <Text style={[styles.slaTitle, { color: colors.text }]}>Performans (SLA)</Text>
+                                    <Text style={[styles.slaSubtitle, { color: colors.textSecondary }]}>Ortalama müdahale ve çözüm süresi</Text>
+                                </View>
+                            </View>
+                            <View style={styles.slaValueContainer}>
+                                <Text style={[styles.slaValue, { color: colors.text }]}>{averageSLA.toFixed(1)}</Text>
+                                <Text style={[styles.slaUnit, { color: colors.textMuted }]}>SAAT</Text>
+                            </View>
+                        </GlassCard>
+                    </FadeInView>
+                )}
+
+                {/* Daily Trend Chart */}
+                <FadeInView delay={250}>
+                    <GlassCard style={styles.chartContainer}>
+                        <Text style={[styles.chartHeader, { color: colors.text }]}>Günlük Talep Trendi (Son 7 Hareketli Gün)</Text>
+                        {trendData.length > 0 ? (
+                            <LineChart
+                                data={{
+                                    labels: trendData.map(d => d[0]),
+                                    datasets: [{ data: trendData.map(d => d[1]) }]
+                                }}
+                                width={chartWidth - 40}
+                                height={220}
+                                chartConfig={{
+                                    ...chartConfig,
+                                    color: (opacity = 1) => `rgba(99, 102, 241, ${opacity})`,
+                                    fillShadowGradient: '#6366f1',
+                                    fillShadowGradientOpacity: 0.1,
+                                }}
+                                bezier
+                                style={styles.chart}
+                            />
+                        ) : (
+                            <Text style={[styles.emptyText, { color: colors.textMuted }]}>Görüntülenecek veri yok</Text>
+                        )}
+                    </GlassCard>
                 </FadeInView>
 
-                {/* Çözüm Oranı Progress */}
-                <FadeInView delay={100} style={[styles.chartCard, { backgroundColor: colors.card }]}>
-                    <Text style={[styles.chartTitle, { color: colors.text }]}>🎯 Genel Başarı Oranı</Text>
-                    <View style={styles.progressContainer}>
-                        <ProgressChart
-                            data={{ labels: ['Çözüm'], data: [globalCozumOrani / 100 || 0] }}
-                            width={chartWidth}
-                            height={180}
-                            strokeWidth={16}
-                            radius={60}
-                            chartConfig={{
-                                ...chartConfig,
-                                color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
-                            }}
-                            hideLegend
-                            style={styles.chart}
-                        />
-                        <View style={styles.progressOverlay}>
-                            <Text style={[styles.progressPercent, { color: '#10b981' }]}>{globalCozumOrani}%</Text>
-                            <Text style={[styles.progressLabel, { color: colors.textSecondary }]}>Başarı</Text>
-                        </View>
-                    </View>
-                </FadeInView>
+                {/* Charts Section */}
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>İşlem Dağılımı</Text>
 
-                {/* Son X Gün Trend */}
-                <FadeInView delay={200} style={[styles.chartCard, { backgroundColor: colors.card }]}>
-                    <Text style={[styles.chartTitle, { color: colors.text }]}>📈 Son {filterDays} Günlük Aktivite</Text>
-                    {gunlukTalepler.length > 0 ? (
-                        <LineChart
-                            data={lineData}
-                            width={chartWidth}
-                            height={280} // Yükseklik biraz daha arttırıldı
-                            chartConfig={{
-                                ...chartConfig,
-                                propsForDots: { r: '4', strokeWidth: '2', stroke: colors.primary }
-                            }}
-                            bezier
-                            style={styles.chart}
-                            withInnerLines={true}
-                            withOuterLines={false}
-                            withVerticalLabels={true}
-                            withHorizontalLabels={true}
-                            fromZero
-                            yAxisInterval={1}
-                        />
-                    ) : (
-                        <Text style={[styles.emptyText, { color: colors.textMuted }]}>Veri yok</Text>
-                    )}
-                </FadeInView>
-
-                {/* Durum Dağılımı ve Kategori Yan Yana (Web) veya Alt Alta (Mobil) */}
-                <View style={isWeb ? styles.rowCharts : {}}>
-                    {/* Durum Dağılımı */}
-                    {pieData.length > 0 && (
-                        <FadeInView delay={300} style={[styles.chartCard, { backgroundColor: colors.card, flex: 1, marginRight: isWeb ? 16 : 0 }]}>
-                            <Text style={[styles.chartTitle, { color: colors.text }]}>🍕 Durum Dağılımı</Text>
+                <FadeInView delay={300}>
+                    <GlassCard style={styles.chartContainer}>
+                        <Text style={[styles.chartHeader, { color: colors.text }]}>Durum Analizi</Text>
+                        {talepler.length > 0 ? (
                             <PieChart
-                                data={pieData}
-                                width={splitChartWidth}
-                                height={240}
+                                data={Object.entries(durumRenkleri).map(([k, v]) => ({
+                                    name: k.toUpperCase(),
+                                    population: talepler.filter(t => t.durum === k).length,
+                                    color: v,
+                                    legendFontColor: colors.textSecondary,
+                                    legendFontSize: 11
+                                }))}
+                                width={chartWidth - 40}
+                                height={200}
                                 chartConfig={chartConfig}
                                 accessor="population"
                                 backgroundColor="transparent"
-                                paddingLeft="0"
-                                center={[10, 0]}
+                                paddingLeft="15"
                                 absolute
-                                style={styles.chart}
                             />
+                        ) : (
+                            <Text style={[styles.emptyText, { color: colors.textMuted }]}>Görüntülenecek veri yok</Text>
+                        )}
+                    </GlassCard>
+                </FadeInView>
+
+                {!isBoardMember && (
+                    <>
+                        <FadeInView delay={400}>
+                            <GlassCard style={styles.chartContainer}>
+                                <Text style={[styles.chartHeader, { color: colors.text }]}>Kategori Yoğunluğu</Text>
+                                {talepler.length > 0 ? (
+                                    <BarChart
+                                        data={{
+                                            labels: Array.from(new Set(talepler.map(t => t.kategori))).slice(0, 5),
+                                            datasets: [{ data: Array.from(new Set(talepler.map(t => t.kategori))).slice(0, 5).map(k => talepler.filter(t => t.kategori === k).length) }]
+                                        }}
+                                        width={chartWidth - 40}
+                                        height={220}
+                                        yAxisLabel=""
+                                        yAxisSuffix=""
+                                        chartConfig={chartConfig}
+                                        style={styles.chart}
+                                        fromZero
+                                    />
+                                ) : (
+                                    <Text style={[styles.emptyText, { color: colors.textMuted }]}>Görüntülenecek veri yok</Text>
+                                )}
+                            </GlassCard>
                         </FadeInView>
-                    )}
 
-                    {/* Kategori Dağılımı */}
-                    {kategoriLabels.length > 0 && (
-                        <FadeInView delay={400} style={[styles.chartCard, { backgroundColor: colors.card, flex: 1, marginLeft: isWeb ? 16 : 0 }]}>
-                            <Text style={[styles.chartTitle, { color: colors.text }]}>📊 Kategori Bazlı Arızalar</Text>
-                            <BarChart
-                                data={barData}
-                                width={splitChartWidth}
-                                height={240}
-                                chartConfig={{
-                                    ...chartConfig,
-                                    color: (opacity = 1) => `rgba(139, 92, 246, ${opacity})`,
-                                }}
-                                style={styles.chart}
-                                showValuesOnTopOfBars
-                                fromZero
-                                yAxisLabel=""
-                                yAxisSuffix=""
-                            />
-                        </FadeInView>
-                    )}
-                </View>
-
-                {/* Top Ekipler */}
-                <View style={[styles.chartCard, { backgroundColor: colors.card }]}>
-                    <Text style={[styles.chartTitle, { color: colors.text }]}>🏆 En Başarılı Ekipler</Text>
-                    {siraliEkipler.length > 0 ? (
-                        siraliEkipler.map(([ekipAdi, stats], index) => {
-                            const ekip = ekipler.find(e => e.ad === ekipAdi);
-                            const renk = ekip?.renk || '#42a5f5';
-                            const ortalamaPuan = stats.puanlananIsSayisi > 0
-                                ? (stats.toplamPuan / stats.puanlananIsSayisi).toFixed(1)
-                                : '-';
-
-                            return (
-                                <View key={index} style={[styles.teknisyenItem, { borderLeftColor: renk }]}>
-                                    <View style={styles.teknisyenSol}>
-                                        <View style={[styles.teknisyenSira, { backgroundColor: isDark ? '#333' : '#eee' }]}>
-                                            <Text style={[styles.siraText, { color: colors.text }]}>{index + 1}</Text>
-                                        </View>
-                                        <View>
-                                            <Text style={[styles.teknisyenAd, { color: colors.text }]}>{ekipAdi}</Text>
-                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                                                <Text style={[styles.teknisyenGorev, { color: colors.textSecondary }]}>
-                                                    {stats.cozulenSayisi} Çözüm
-                                                </Text>
-                                                {stats.puanlananIsSayisi > 0 && (
-                                                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#2e3a1a' : '#fff9c4', paddingHorizontal: 4, borderRadius: 4 }}>
-                                                        <Ionicons name="star" size={10} color="#fbc02d" />
-                                                        <Text style={{ fontSize: 11, fontWeight: 'bold', color: isDark ? '#dace29' : '#f57f17', marginLeft: 2 }}>
-                                                            {ortalamaPuan} <Text style={{ fontWeight: 'normal', fontSize: 10 }}>({stats.puanlananIsSayisi})</Text>
-                                                        </Text>
-                                                    </View>
-                                                )}
+                        {/* Technician Leaderboard Section */}
+                        <Text style={[styles.sectionTitle, { color: colors.text }]}>En Çok Çözüm Üreten Teknisyenler</Text>
+                        <FadeInView delay={500}>
+                            <GlassCard style={styles.listCard}>
+                                {techLeaderboard.length > 0 ? techLeaderboard.map((tech, index) => (
+                                    <View key={tech.name} style={[styles.listItem, index === techLeaderboard.length - 1 && { borderBottomWidth: 0 }]}>
+                                        <View style={styles.rankContainer}>
+                                            <View style={[styles.rankBadge, index === 0 && { backgroundColor: '#ffd700' }, index === 1 && { backgroundColor: '#c0c0c0' }, index === 2 && { backgroundColor: '#cd7f32' }]}>
+                                                <Text style={styles.rankText}>{index + 1}</Text>
                                             </View>
+                                            <Text style={[styles.itemName, { color: colors.text }]}>{tech.name}</Text>
+                                        </View>
+                                        <View style={styles.itemValueContainer}>
+                                            <Text style={[styles.itemValue, { color: colors.primary }]}>{tech.count} İş</Text>
+                                            <Text style={[styles.itemSubValue, { color: colors.textMuted }]}>~{tech.avgSLA}sa</Text>
                                         </View>
                                     </View>
-                                    <View style={[styles.basariBadge, { backgroundColor: isDark ? '#1a3a1a' : '#e8f5e9' }]}>
-                                        <Ionicons name="trophy" size={12} color="#4caf50" />
-                                        <Text style={styles.basariText}>%{(stats.cozulenSayisi / toplam * 100).toFixed(0)}</Text>
-                                    </View>
-                                </View>
-                            );
-                        })
-                    ) : (
-                        <Text style={[styles.emptyText, { color: colors.textMuted }]}>Henüz veri yok</Text>
-                    )}
-                </View>
+                                )) : (
+                                    <Text style={[styles.emptyText, { color: colors.textMuted }]}>Yeterli veri bulunmuyor</Text>
+                                )}
+                            </GlassCard>
+                        </FadeInView>
+                    </>
+                )}
 
-                {/* Proje Bazlı Özet */}
-                <View style={[styles.chartCard, { backgroundColor: colors.card, marginBottom: 40 }]}>
-                    <Text style={[styles.chartTitle, { color: colors.text }]}>🏗️ Proje Bazlı Talepler</Text>
-                    {projeLabels.length > 0 ? (
-                        projeLabels.map((proje, index) => {
-                            const projeToplamTalep = projeSayilari[proje];
-                            const projeCozulenTalep = talepler.filter(t => t.projeAdi === proje && t.durum === 'cozuldu').length;
-                            const projeOrani = Math.round((projeCozulenTalep / projeToplamTalep) * 100);
-
-                            return (
-                                <View key={proje} style={styles.projectItem}>
-                                    <View style={styles.projectHeader}>
-                                        <Text style={[styles.projectName, { color: colors.text }]}>{proje}</Text>
-                                        <Text style={[styles.projectCount, { color: colors.textSecondary }]}>{projeToplamTalep} talep</Text>
-                                    </View>
-                                    <View style={[styles.projectBarBg, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}>
-                                        <View style={[styles.projectBar, { width: `${projeOrani}%`, backgroundColor: kategoriRenkleri[index % kategoriRenkleri.length] }]} />
-                                    </View>
-                                    <Text style={[styles.projectPercent, { color: kategoriRenkleri[index % kategoriRenkleri.length] }]}>{projeOrani}% çözüldü</Text>
+                {/* Project Hotspots Section */}
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Arıza Yoğunluğu (Proje Bazlı)</Text>
+                <FadeInView delay={600}>
+                    <GlassCard style={styles.listCard}>
+                        {projectHotspots.length > 0 ? projectHotspots.map((project, index) => (
+                            <View key={project.name} style={[styles.listItem, index === projectHotspots.length - 1 && { borderBottomWidth: 0 }]}>
+                                <View style={styles.itemInfo}>
+                                    <Ionicons name="business" size={18} color={colors.primary} style={{ marginRight: 10 }} />
+                                    <Text style={[styles.itemName, { color: colors.text }]}>{project.name}</Text>
                                 </View>
-                            );
-                        })
-                    ) : (
-                        <Text style={[styles.emptyText, { color: colors.textMuted }]}>Henüz proje verisi yok</Text>
-                    )}
-                </View>
+                                <View style={styles.itemProgressContainer}>
+                                    <View style={styles.progressBarBg}>
+                                        <View style={[styles.progressBarFill, {
+                                            width: `${(project.count / projectHotspots[0].count) * 100}%`,
+                                            backgroundColor: colors.primary
+                                        }]} />
+                                    </View>
+                                    <Text style={[styles.itemValue, { color: colors.textSecondary }]}>{project.count}</Text>
+                                </View>
+                            </View>
+                        )) : (
+                            <Text style={[styles.emptyText, { color: colors.textMuted }]}>Yeterli veri bulunmuyor</Text>
+                        )}
+                    </GlassCard>
+                </FadeInView>
+
+                {!isBoardMember && (
+                    <>
+                        {/* Priority Speed Analysis */}
+                        <Text style={[styles.sectionTitle, { color: colors.text }]}>Öncelik Bazlı Çözüm Hızı (SLA)</Text>
+                        <FadeInView delay={700}>
+                            <View style={styles.priorityGrid}>
+                                {['acil', 'normal', 'dusuk'].map(p => {
+                                    const data = priorityVelocity[p] || { count: 0, totalTime: 0 };
+                                    const avgSLA = data.count > 0 ? (data.totalTime / data.count).toFixed(1) : "-";
+                                    const colorMap: Record<string, string> = { acil: '#ef4444', normal: '#3b82f6', dusuk: '#10b981' };
+
+                                    return (
+                                        <GlassCard key={p} style={styles.priorityCard}>
+                                            <View style={[styles.priorityIcon, { backgroundColor: `${colorMap[p]}15` }]}>
+                                                <Ionicons name="flash" size={20} color={colorMap[p]} />
+                                            </View>
+                                            <Text style={[styles.priorityLabel, { color: colors.textMuted }]}>{p.toUpperCase()}</Text>
+                                            <Text style={[styles.priorityValue, { color: colors.text }]}>{avgSLA} <Text style={styles.priorityUnit}>saat</Text></Text>
+                                            <Text style={[styles.prioritySub, { color: colors.textMuted }]}>{data.count} çözüm</Text>
+                                        </GlassCard>
+                                    );
+                                })}
+                            </View>
+                        </FadeInView>
+                    </>
+                )}
+
+                {/* Placeholder for future growth */}
+                <View style={{ height: 40 }} />
             </ScrollView>
         </View>
     );
@@ -537,115 +529,237 @@ export default function RaporlarScreen() {
 const styles = StyleSheet.create({
     container: { flex: 1 },
     header: {
-        paddingTop: 50,
-        paddingBottom: 25,
+        paddingTop: 60,
+        paddingBottom: 30,
         paddingHorizontal: 20,
-        borderBottomLeftRadius: 30,
-        borderBottomRightRadius: 30,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 10,
-        elevation: 8,
+        borderBottomLeftRadius: 36,
+        borderBottomRightRadius: 36,
     },
-    headerTop: { flexDirection: 'row', alignItems: 'center' },
-    backButton: { marginRight: 12, padding: 8, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 12 },
-    refreshButton: { padding: 8, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 12 },
-    headerTitle: { fontSize: 24, fontWeight: '700', color: '#fff', letterSpacing: 0.5 },
-    headerSubtitle: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
-    content: { flex: 1 },
-    scrollContent: { padding: 16 },
-
-    // Filter
-    filterContainer: { flexDirection: 'row', gap: 10, marginBottom: 16 },
-    filterButton: {
-        paddingVertical: 8,
-        paddingHorizontal: 16,
-        borderRadius: 20,
-        borderWidth: 1,
-        backgroundColor: 'transparent'
-    },
-    filterText: { fontSize: 13, fontWeight: '600' },
-
-    // Özet Kartlar
-    summaryContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 16, gap: 10 },
-    summaryCard: {
-        padding: 16,
-        borderRadius: 16,
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOpacity: 0.15,
-        shadowRadius: 8,
-        elevation: 4,
-    },
-    summaryNumber: { fontSize: 24, fontWeight: '800', color: '#fff', marginTop: 8 },
-    summaryLabel: { fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 2, fontWeight: '500' },
-
-    // Chart Cards
-    chartCard: {
-        borderRadius: 20,
-        padding: 20,
-        marginBottom: 16,
-        shadowColor: '#000',
-        shadowOpacity: 0.08,
-        shadowRadius: 12,
-        elevation: 3,
-        alignItems: 'center',
-        overflow: 'hidden'
-    },
-    chartTitle: { fontSize: 18, fontWeight: '700', marginBottom: 20, alignSelf: 'flex-start' },
-    emptyText: { textAlign: 'center', fontSize: 14, fontStyle: 'italic', padding: 20 },
-    rowCharts: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
-
-    // Teknisyen/Ekip Listesi
-    teknisyenItem: {
+    headerContent: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: 'rgba(0,0,0,0.05)',
-        borderLeftWidth: 4,
-        paddingLeft: 12,
-        marginBottom: 8,
-        backgroundColor: 'rgba(0,0,0,0.02)',
-        borderRadius: 8,
     },
-    teknisyenSol: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    teknisyenSira: {
-        width: 24,
-        height: 24,
+    headerText: {
+        flex: 1,
+        marginLeft: 15,
+    },
+    title: {
+        fontSize: 24,
+        fontWeight: '900',
+        color: '#fff',
+        letterSpacing: -0.5,
+    },
+    subtitle: {
+        fontSize: 12,
+        color: 'rgba(255,255,255,0.7)',
+        fontWeight: '600',
+    },
+    headerActions: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    iconBtn: {
+        width: 40,
+        height: 40,
         borderRadius: 12,
+        backgroundColor: 'rgba(255,255,255,0.15)',
         justifyContent: 'center',
         alignItems: 'center',
     },
-    siraText: { fontWeight: 'bold', fontSize: 11 },
-    teknisyenAd: { fontWeight: '600', fontSize: 14 },
-    teknisyenGorev: { fontSize: 11, marginTop: 1 },
-    basariBadge: {
+    content: { flex: 1 },
+    scrollContent: { padding: 20 },
+    filterRow: {
+        flexDirection: 'row',
+        gap: 10,
+        marginBottom: 20,
+    },
+    filterBtn: {
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(0,0,0,0.1)',
+    },
+    filterBtnText: {
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    statsGrid: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginHorizontal: -6,
+    },
+    slaCard: {
+        marginVertical: 15,
+        padding: 20,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    slaHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 6,
-        paddingVertical: 3,
-        borderRadius: 10,
-        gap: 3,
+        gap: 15,
     },
-    basariText: { fontSize: 11, fontWeight: 'bold', color: '#4caf50' },
-
-    chart: { borderRadius: 16, marginTop: 10 },
-
-    // Progress Chart
-    progressContainer: { alignItems: 'center', justifyContent: 'center', position: 'relative' },
-    progressOverlay: { position: 'absolute', alignItems: 'center' },
-    progressPercent: { fontSize: 32, fontWeight: '800' },
-    progressLabel: { fontSize: 12, marginTop: 2 },
-
-    // Project Items
-    projectItem: { marginBottom: 16 },
-    projectHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-    projectName: { fontSize: 15, fontWeight: '600' },
-    projectCount: { fontSize: 13 },
-    projectBarBg: { height: 8, borderRadius: 4, overflow: 'hidden' },
-    projectBar: { height: '100%', borderRadius: 4 },
-    projectPercent: { fontSize: 12, fontWeight: '600', marginTop: 4 },
+    slaIcon: {
+        width: 48,
+        height: 48,
+        borderRadius: 16,
+        backgroundColor: '#ef444420',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    slaTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    slaSubtitle: {
+        fontSize: 11,
+    },
+    slaValueContainer: {
+        alignItems: 'flex-end',
+    },
+    slaValue: {
+        fontSize: 32,
+        fontWeight: '900',
+    },
+    slaUnit: {
+        fontSize: 10,
+        fontWeight: '800',
+    },
+    sectionTitle: {
+        fontSize: 18,
+        fontWeight: '800',
+        marginTop: 20,
+        marginBottom: 15,
+    },
+    chartContainer: {
+        padding: 20,
+        marginBottom: 15,
+        alignItems: 'center',
+    },
+    chartHeader: {
+        fontSize: 14,
+        fontWeight: '700',
+        alignSelf: 'flex-start',
+        marginBottom: 15,
+    },
+    chart: {
+        borderRadius: 16,
+        marginVertical: 10,
+    },
+    listCard: {
+        padding: 15,
+        marginBottom: 15,
+    },
+    listItem: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255,255,255,0.05)',
+    },
+    rankContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    rankBadge: {
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    rankText: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: '#fff',
+    },
+    itemName: {
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    itemValueContainer: {
+        alignItems: 'flex-end',
+    },
+    itemValue: {
+        fontSize: 14,
+        fontWeight: '800',
+    },
+    itemSubValue: {
+        fontSize: 10,
+        fontWeight: '600',
+    },
+    itemInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+    },
+    itemProgressContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        flex: 1,
+        justifyContent: 'flex-end',
+    },
+    progressBarBg: {
+        height: 6,
+        width: 80,
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        borderRadius: 3,
+        overflow: 'hidden',
+    },
+    progressBarFill: {
+        height: '100%',
+        borderRadius: 3,
+    },
+    emptyText: {
+        textAlign: 'center',
+        padding: 20,
+        fontSize: 13,
+        fontStyle: 'italic',
+    },
+    priorityGrid: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 30,
+        marginHorizontal: -5,
+    },
+    priorityCard: {
+        flex: 1,
+        marginHorizontal: 5,
+        padding: 15,
+        alignItems: 'center',
+    },
+    priorityIcon: {
+        width: 36,
+        height: 36,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    priorityLabel: {
+        fontSize: 10,
+        fontWeight: '800',
+        marginBottom: 4,
+    },
+    priorityValue: {
+        fontSize: 18,
+        fontWeight: '900',
+    },
+    priorityUnit: {
+        fontSize: 10,
+        fontWeight: '600',
+    },
+    prioritySub: {
+        fontSize: 9,
+        marginTop: 2,
+    }
 });
+
+

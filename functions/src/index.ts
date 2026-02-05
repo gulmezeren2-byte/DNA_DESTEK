@@ -74,7 +74,7 @@ async function getUserPushToken(userId: string): Promise<string | null> {
  */
 export const onTalepStatusChange = functions.firestore
     .document('talepler/{talepId}')
-    .onUpdate(async (change, context) => {
+    .onUpdate(async (change: functions.Change<functions.firestore.QueryDocumentSnapshot>, context: functions.EventContext) => {
         const before = change.before.data();
         const after = change.after.data();
 
@@ -119,7 +119,7 @@ export const onTalepStatusChange = functions.firestore
  */
 export const onTalepAssigned = functions.firestore
     .document('talepler/{talepId}')
-    .onUpdate(async (change, context) => {
+    .onUpdate(async (change: functions.Change<functions.firestore.QueryDocumentSnapshot>, context: functions.EventContext) => {
         const before = change.before.data();
         const after = change.after.data();
 
@@ -184,7 +184,7 @@ export const onTalepAssigned = functions.firestore
  */
 export const onTalepCreated = functions.firestore
     .document('talepler/{talepId}')
-    .onCreate(async (snapshot, context) => {
+    .onCreate(async (snapshot: functions.firestore.QueryDocumentSnapshot, context: functions.EventContext) => {
         const data = snapshot.data();
         const talepId = context.params.talepId;
 

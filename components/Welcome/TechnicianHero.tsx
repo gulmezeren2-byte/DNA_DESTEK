@@ -2,18 +2,22 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTheme } from '../../contexts/ThemeContext';
+import { getShadowStyle } from '../../utils/shadow';
 import Logo from '../Logo';
+import GlassCard from '../ui/GlassCard';
 
 export default function TechnicianHero() {
     const { user } = useAuth();
+    const { isDark } = useTheme();
     const router = useRouter();
 
     return (
         <View style={styles.container}>
             <LinearGradient
-                colors={['#263238', '#37474F', '#455A64']}
+                colors={isDark ? ['#1e293b', '#334155'] : ['#263238', '#455A64']}
                 style={styles.heroBackground}
             >
                 <View style={styles.header}>
@@ -28,20 +32,22 @@ export default function TechnicianHero() {
                     <Text style={styles.greeting}>Kolay Gelsin,</Text>
                     <Text style={styles.name}>{user?.ad}</Text>
 
-                    <View style={styles.card}>
-                        <Ionicons name="trophy-outline" size={40} color="#FFD700" style={{ marginBottom: 10 }} />
-                        <Text style={styles.cardTitle}>Emeğine Sağlık!</Text>
+                    <GlassCard style={styles.infoCard}>
+                        <View style={styles.cardHeader}>
+                            <Ionicons name="trophy" size={32} color="#fbbf24" />
+                            <Text style={styles.cardTitle}>Emeğine Sağlık!</Text>
+                        </View>
                         <Text style={styles.cardText}>
-                            Senin sayende müşterilerimiz evlerinde huzurla yaşıyor.
+                            Senin sayende müşterilerimiz evlerinde huzurla yaşıyor. Bugün için atanmış görevlerini kontrol etmeyi unutma.
                         </Text>
-                    </View>
+                    </GlassCard>
 
-                    <TouchableOpacity
-                        style={styles.ctaButton}
+                    <Pressable
+                        style={({ pressed }) => [styles.ctaButton, { opacity: pressed ? 0.9 : 1 }]}
                         onPress={() => router.push('/(tabs)/taleplerim')}
                     >
                         <LinearGradient
-                            colors={['#009688', '#00796B']}
+                            colors={['#059669', '#10b981']}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 0 }}
                             style={styles.ctaGradient}
@@ -49,7 +55,7 @@ export default function TechnicianHero() {
                             <Ionicons name="list" size={24} color="#fff" />
                             <Text style={styles.ctaText}>Görevlerime Git</Text>
                         </LinearGradient>
-                    </TouchableOpacity>
+                    </Pressable>
                 </View>
             </LinearGradient>
         </View>
@@ -58,17 +64,18 @@ export default function TechnicianHero() {
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    heroBackground: { flex: 1, paddingTop: 60, paddingHorizontal: 30 },
-    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 50 },
-    roleBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
-    roleText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
-    content: { alignItems: 'flex-start' },
-    greeting: { fontSize: 28, color: 'rgba(255,255,255,0.7)', fontWeight: '300' },
-    name: { fontSize: 40, color: '#fff', fontWeight: 'bold', marginBottom: 40 },
-    card: { backgroundColor: 'rgba(255,255,255,0.1)', padding: 30, borderRadius: 20, width: '100%', marginBottom: 40, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-    cardTitle: { fontSize: 22, fontWeight: 'bold', color: '#FFD700', marginBottom: 10 },
-    cardText: { fontSize: 16, color: 'rgba(255,255,255,0.9)', lineHeight: 24 },
-    ctaButton: { width: '100%', shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 20, elevation: 10 },
-    ctaGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 20, borderRadius: 16, gap: 10 },
-    ctaText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+    heroBackground: { flex: 1, paddingTop: 60, paddingHorizontal: 25 },
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 40 },
+    roleBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.12)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+    roleText: { color: '#fff', fontSize: 10, fontWeight: '900', letterSpacing: 1 },
+    content: { alignItems: 'flex-start', width: '100%' },
+    greeting: { fontSize: 24, color: 'rgba(255,255,255,0.7)', fontWeight: '400' },
+    name: { fontSize: 42, color: '#fff', fontWeight: '900', marginBottom: 30, letterSpacing: -1 },
+    infoCard: { width: '100%', padding: 24, marginBottom: 30 },
+    cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+    cardTitle: { fontSize: 20, fontWeight: '800', color: '#fbbf24' },
+    cardText: { fontSize: 14, color: 'rgba(255,255,255,0.8)', lineHeight: 22 },
+    ctaButton: { width: '100%', ...getShadowStyle(8, '#000', 0.2, 15, { width: 0, height: 8 }) },
+    ctaGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 20, borderRadius: 20, gap: 12 },
+    ctaText: { color: '#fff', fontSize: 18, fontWeight: '800' },
 });

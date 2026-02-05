@@ -62,52 +62,29 @@ export async function registerForPushNotificationsAsync() {
 }
 
 /**
- * @deprecated SEC-001: This function sends push notifications client-side.
+ * @deprecated SEC-001 CRITICAL: This function is DISABLED for security reasons.
  * 
- * SECURITY WARNING: Any authenticated user can call this function.
- * This should be migrated to Cloud Functions for proper security.
+ * SECURITY ISSUE: Client-side push notifications allow ANY authenticated user
+ * to send notifications to ANY token, enabling spam and phishing attacks.
  * 
- * Current usage is limited to:
- * - Admin/Technician roles (UI-controlled, not enforced)
- * - Assignment notifications in yonetim.tsx
- * - Status update notifications in teknisyen.tsx
- * 
- * TODO: Migrate to Cloud Functions triggered by Firestore writes:
- * - onCreate: talepler -> notify customer
+ * MIGRATION: Push notifications MUST be sent from Cloud Functions triggered by Firestore writes:
+ * - onCreate: talepler -> notify customer about new talep
  * - onUpdate: talepler (status change) -> notify relevant parties
+ * 
+ * See functions/src/index.ts for server-side implementation.
  */
 export async function sendPushNotification(expoPushToken: string, title: string, body: string, data: any = {}) {
-    // SEC-001: Log for audit trail (removed in production by babel)
-    console.warn('SEC-001: sendPushNotification called client-side - consider Cloud Functions migration');
+    // SEC-001 FIX: COMPLETELY DISABLED - Return immediately without sending
+    console.error('SEC-001 BLOCKED: Client-side push notifications are disabled for security. Use Cloud Functions instead.');
 
-    if (!expoPushToken || typeof expoPushToken !== 'string' || !expoPushToken.startsWith('ExponentPushToken')) {
-        console.error('Invalid push token format');
-        return;
+    // Log attempt for security audit (will be stripped in production)
+    if (__DEV__) {
+        console.warn('Attempted push notification blocked:', { to: expoPushToken?.substring(0, 20) + '...', title });
     }
 
-    const message = {
-        to: expoPushToken,
-        sound: 'default',
-        title: title,
-        body: body,
-        data: data,
-    };
-
-    try {
-        const response = await fetch('https://exp.host/--/api/v2/push/send', {
-            method: 'POST',
-            headers: {
-                Accept: 'application/json',
-                'Accept-encoding': 'gzip, deflate',
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(message),
-        });
-
-        if (!response.ok) {
-            console.error('Push notification failed:', response.status);
-        }
-    } catch (error) {
-        console.error('Bildirim gönderme hatası:', error);
-    }
+    return; // Do nothing - all push must go through Cloud Functions
 }
+
+// Flag for development mode detection
+declare const __DEV__: boolean;
+

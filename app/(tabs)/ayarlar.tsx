@@ -26,6 +26,7 @@ const rolEtiketleri: Record<string, { label: string; color: string; icon: string
     musteri: { label: 'Müşteri', color: '#1565c0', icon: 'person' },
     teknisyen: { label: 'Teknisyen', color: '#ef6c00', icon: 'construct' },
     yonetim: { label: 'Yönetim', color: '#7b1fa2', icon: 'shield-checkmark' },
+    yonetim_kurulu: { label: 'Yönetim Kurulu', color: '#c2185b', icon: 'briefcase' },
 };
 
 export default function AyarlarScreen() {

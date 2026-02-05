@@ -24,6 +24,8 @@ interface AuthContextType {
     isMusteri: boolean;
     isTeknisyen: boolean;
     isYonetim: boolean;
+    isBoardMember: boolean;
+    isProfileComplete: boolean;
     setUser: (user: DNAUser | null) => void;
 }
 
@@ -85,6 +87,28 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
             unsubscribe();
         };
     }, []);
+
+    // SEC-010 FIX: Inactivity timeout (30 minutes)
+    const [lastActivity, setLastActivity] = useState(Date.now());
+    const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+    useEffect(() => {
+        if (!user) return;
+
+        const checkInactivity = setInterval(() => {
+            const inactive = Date.now() - lastActivity;
+            if (inactive >= INACTIVITY_TIMEOUT_MS) {
+                console.warn('SEC-010: Inactivity timeout reached, logging out');
+                logout();
+            }
+        }, 60000); // Check every minute
+
+        return () => clearInterval(checkInactivity);
+    }, [user, lastActivity]);
+
+    // SEC-010: Reset activity timer on any auth action
+    const resetActivity = () => setLastActivity(Date.now());
+
 
     // Giriş fonksiyonu
     const login = async (email: string, password: string): Promise<LoginResult> => {
@@ -151,7 +175,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         isAuthenticated: !!user,
         isMusteri: user?.rol === 'musteri',
         isTeknisyen: user?.rol === 'teknisyen',
-        isYonetim: user?.rol === 'yonetim',
+        isYonetim: user?.rol === 'yonetim' || user?.rol === 'yonetim_kurulu',
+        isBoardMember: user?.rol === 'yonetim_kurulu',
+        isProfileComplete: user?.hasProfile === true,
         setUser,
     }), [user, loading, error]);
 

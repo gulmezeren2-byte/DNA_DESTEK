@@ -5,24 +5,15 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { arrayUnion, collection, doc, Firestore, limit, onSnapshot, orderBy, query, Timestamp, updateDoc, where } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-    ActivityIndicator,
-    Modal,
-    RefreshControl,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
-} from 'react-native';
+
+import { ActivityIndicator, Modal, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import Logo from '../../components/Logo';
 import OptimizedImage from '../../components/OptimizedImage';
 import { ListSkeleton } from '../../components/Skeleton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { db as dbAny } from '../../firebaseConfig';
+import AuditLog from '../../services/auditService';
 import toast from '../../services/toastService';
 import { Talep } from '../../types';
 const db = dbAny as Firestore;
@@ -72,10 +63,10 @@ export default function TeknisyenScreen() {
     const [refreshing, setRefreshing] = useState(false);
     const [seciliTalep, setSeciliTalep] = useState<Talep | null>(null);
     const [detayModalVisible, setDetayModalVisible] = useState(false);
-    const [yorumModalVisible, setYorumModalVisible] = useState(false);
     const [yeniYorum, setYeniYorum] = useState('');
     const [islemYukleniyor, setIslemYukleniyor] = useState(false);
     const [tamEkranFoto, setTamEkranFoto] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState<'aktif' | 'gecmis'>('aktif');
 
     // Çözüm fotoğrafı için
     const [cozumModalVisible, setCozumModalVisible] = useState(false);
@@ -208,6 +199,51 @@ export default function TeknisyenScreen() {
                 });
                 unsubscribes.push(unsubActive);
 
+                // A2. Active Listeners (Individual Assignments) - FIX for missing tasks
+                const qIndividual = query(
+                    collection(db as Firestore, 'talepler'),
+                    where('atananTeknisyenId', '==', user.id),
+                    where('durum', 'in', activeStatus)
+                );
+
+                const unsubIndividual = onSnapshot(qIndividual, (snapshot) => {
+                    snapshot.docChanges().forEach((change) => {
+                        const talep = { id: change.doc.id, ...change.doc.data() } as Talep;
+                        if (change.type === 'removed') {
+                            activeMap.delete(talep.id);
+                        } else {
+                            activeMap.set(talep.id, talep);
+                        }
+                    });
+                    updateState();
+                }, (error) => {
+                    console.error("Individual tasks listener error:", error);
+                });
+                unsubscribes.push(unsubIndividual);
+
+                // A3. Active Listeners (Team Membership - Robust)
+                // This catches tasks assigned to a team where the user is a member, regardless of user.kategori matching
+                const qMember = query(
+                    collection(db as Firestore, 'talepler'),
+                    where('atananEkipUyeIds', 'array-contains', user.id),
+                    where('durum', 'in', activeStatus)
+                );
+
+                const unsubMember = onSnapshot(qMember, (snapshot) => {
+                    snapshot.docChanges().forEach((change) => {
+                        const talep = { id: change.doc.id, ...change.doc.data() } as Talep;
+                        if (change.type === 'removed') {
+                            activeMap.delete(talep.id);
+                        } else {
+                            activeMap.set(talep.id, talep);
+                        }
+                    });
+                    updateState();
+                }, (error) => {
+                    console.error("Member tasks listener error:", error);
+                });
+                unsubscribes.push(unsubMember);
+
                 // B. Completed Tasks (Primary Team - Limited)
                 const qCompleted = query(
                     collection(db as Firestore, 'talepler'),
@@ -236,6 +272,7 @@ export default function TeknisyenScreen() {
                 const qNew = query(
                     collection(db as Firestore, 'talepler'),
                     where('durum', '==', 'yeni'),
+                    where('kategori', '==', myTeamId), // FLOW-001: Kural ile uyumlu kategori filtresi
                     limit(20)
                 );
                 const unsubNew = onSnapshot(qNew, (snapshot) => {
@@ -375,7 +412,8 @@ export default function TeknisyenScreen() {
             toast.success('Yorum eklendi!');
 
             setYeniYorum('');
-            setYorumModalVisible(false);
+            setYeniYorum('');
+            // setYorumModalVisible(false); // Modal kaldırıldı
         } catch (error: any) {
             toast.error('Hata: ' + error.message);
         } finally {
@@ -436,33 +474,48 @@ export default function TeknisyenScreen() {
                         </View>
                     </View>
                 </View>
-
-                {/* İstatistikler - Floating Card Style */}
-                <View style={styles.statsContainer}>
-                    <View style={styles.statItem}>
-                        <Text style={styles.statNumber}>{aktifTalepler.length}</Text>
-                        <Text style={styles.statLabel}>Aktif</Text>
-                    </View>
-                    <View style={[styles.statDivider, { backgroundColor: 'rgba(255,255,255,0.2)' }]} />
-                    <View style={styles.statItem}>
-                        <Text style={styles.statNumber}>{tamamlananTalepler.length}</Text>
-                        <Text style={styles.statLabel}>Biten</Text>
-                    </View>
-                    <View style={[styles.statDivider, { backgroundColor: 'rgba(255,255,255,0.2)' }]} />
-                    <View style={styles.statItem}>
-                        <Text style={[styles.statNumber, { color: '#ffcdd2' }]}>
-                            {talepler.filter(t => t.oncelik === 'acil' && t.durum !== 'cozuldu').length}
-                        </Text>
-                        <Text style={styles.statLabel}>Acil</Text>
-                    </View>
-                </View>
             </LinearGradient>
 
+            {/* İstatistikler - Floating Card Style */}
+            <View style={styles.statsContainer}>
+                <View style={styles.statItem}>
+                    <Text style={styles.statNumber}>{aktifTalepler.length}</Text>
+                    <Text style={styles.statLabel}>Aktif</Text>
+                </View>
+                <View style={[styles.statDivider, { backgroundColor: 'rgba(255,255,255,0.2)' }]} />
+                <View style={styles.statItem}>
+                    <Text style={styles.statNumber}>{tamamlananTalepler.length}</Text>
+                    <Text style={styles.statLabel}>Biten</Text>
+                </View>
+                <View style={[styles.statDivider, { backgroundColor: 'rgba(255,255,255,0.2)' }]} />
+                <View style={styles.statItem}>
+                    <Text style={[styles.statNumber, { color: '#ffcdd2' }]}>
+                        {talepler.filter(t => t.oncelik === 'acil' && t.durum !== 'cozuldu').length}
+                    </Text>
+                    <Text style={styles.statLabel}>Acil</Text>
+                </View>
+            </View >
 
             <ScrollView
                 style={styles.content}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
             >
+                {/* Tab Buttons */}
+                <View style={styles.tabContainer}>
+                    <TouchableOpacity
+                        style={[styles.tabButton, activeTab === 'aktif' && styles.activeTabButton, { borderBottomColor: activeTab === 'aktif' ? colors.primary : 'transparent' }]}
+                        onPress={() => setActiveTab('aktif')}
+                    >
+                        <Text style={[styles.tabText, activeTab === 'aktif' && styles.activeTabText, { color: activeTab === 'aktif' ? colors.primary : colors.textSecondary }]}>Aktif Görevler</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.tabButton, activeTab === 'gecmis' && styles.activeTabButton, { borderBottomColor: activeTab === 'gecmis' ? colors.primary : 'transparent' }]}
+                        onPress={() => setActiveTab('gecmis')}
+                    >
+                        <Text style={[styles.tabText, activeTab === 'gecmis' && styles.activeTabText, { color: activeTab === 'gecmis' ? colors.primary : colors.textSecondary }]}>Tamamlananlar</Text>
+                    </TouchableOpacity>
+                </View>
+
                 {talepler.length === 0 ? (
                     <View style={styles.emptyContainer}>
                         <View style={[styles.emptyIcon, { backgroundColor: isDark ? '#1a3a5c' : '#e3f2fd' }]}>
@@ -475,13 +528,19 @@ export default function TeknisyenScreen() {
                     </View>
                 ) : (
                     <>
-                        {/* Aktif Talepler */}
-                        {aktifTalepler.length > 0 && (
+                        {/* Tab Content */}
+                        {(activeTab === 'aktif' ? aktifTalepler : tamamlananTalepler).length === 0 ? (
+                            <View style={styles.emptyContainer}>
+                                <Text style={[styles.emptyText, { color: colors.text }]}>
+                                    {activeTab === 'aktif' ? 'Aktif görev bulunmuyor' : 'Tamamlanmış görev bulunmuyor'}
+                                </Text>
+                            </View>
+                        ) : (
                             <View style={styles.section}>
                                 <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                                    🔧 Aktif Talepler ({aktifTalepler.length})
+                                    {activeTab === 'aktif' ? '🔧 Aktif Talepler' : '✅ Tamamlananlar'} ({(activeTab === 'aktif' ? aktifTalepler : tamamlananTalepler).length})
                                 </Text>
-                                {aktifTalepler.map((talep) => {
+                                {(activeTab === 'aktif' ? aktifTalepler : tamamlananTalepler).map((talep) => {
                                     const durum = durumConfig[talep.durum] || durumConfig.yeni;
                                     return (
                                         <TouchableOpacity
@@ -505,36 +564,22 @@ export default function TeknisyenScreen() {
                                                         )}
                                                     </View>
                                                     <View style={[styles.durumBadge, { backgroundColor: isDark ? durum.bgDark : durum.bg }]}>
-                                                        <Ionicons name={durum.icon as any} size={12} color={isDark ? durum.textDark : durum.text} />
                                                         <Text style={[styles.durumText, { color: isDark ? durum.textDark : durum.text }]}>{durum.label}</Text>
                                                     </View>
                                                 </View>
 
-                                                <Text style={[styles.talepBaslik, { color: colors.text }]}>{talep.baslik}</Text>
+                                                <Text style={[styles.talepBaslik, { color: colors.text }]} numberOfLines={1}>{talep.baslik}</Text>
+                                                <Text style={[styles.talepAciklama, { color: colors.textSecondary }]} numberOfLines={2}>{talep.aciklama}</Text>
 
-                                                <View style={styles.infoRow}>
-                                                    <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
-                                                    <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                                                        {talep.projeAdi} {talep.blokAdi && `• ${talep.blokAdi}`} {talep.daireNo && `• D.${talep.daireNo}`}
-                                                    </Text>
-                                                </View>
-
-                                                <View style={styles.infoRow}>
-                                                    <Ionicons name="person-outline" size={14} color={colors.textSecondary} />
-                                                    <Text style={[styles.infoText, { color: colors.textSecondary }]}>{talep.musteriAdi}</Text>
-                                                </View>
-
-                                                <View style={[styles.talepFooter, { borderTopColor: colors.border }]}>
-                                                    <View style={styles.footerLeft}>
-                                                        <Ionicons name="time-outline" size={12} color={colors.textMuted} />
-                                                        <Text style={[styles.tarihText, { color: colors.textMuted }]}>{formatTarih(talep.olusturmaTarihi)}</Text>
+                                                <View style={styles.talepFooter}>
+                                                    <View style={styles.footerItem}>
+                                                        <Ionicons name="person-outline" size={14} color={colors.textSecondary} />
+                                                        <Text style={[styles.footerText, { color: colors.textSecondary }]}>{talep.olusturanAd || 'İsimsiz'}</Text>
                                                     </View>
-                                                    {talep.yorumlar && talep.yorumlar.length > 0 && (
-                                                        <View style={styles.yorumIndicator}>
-                                                            <Ionicons name="chatbubble-outline" size={12} color={colors.textSecondary} />
-                                                            <Text style={[styles.yorumCount, { color: colors.textSecondary }]}>{talep.yorumlar.length}</Text>
-                                                        </View>
-                                                    )}
+                                                    <View style={styles.footerItem}>
+                                                        <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+                                                        <Text style={[styles.footerText, { color: colors.textSecondary }]}>{formatTarih(talep.olusturmaTarihi)}</Text>
+                                                    </View>
                                                 </View>
                                             </View>
                                         </TouchableOpacity>
@@ -542,200 +587,182 @@ export default function TeknisyenScreen() {
                                 })}
                             </View>
                         )}
-
-                        {/* Tamamlanan Talepler */}
-                        {tamamlananTalepler.length > 0 && (
-                            <View style={styles.section}>
-                                <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
-                                    ✅ Tamamlanan ({tamamlananTalepler.length})
-                                </Text>
-                                {tamamlananTalepler.slice(0, 5).map((talep) => (
-                                    <TouchableOpacity
-                                        key={talep.id}
-                                        style={[styles.talepCardSmall, { backgroundColor: colors.card, opacity: 0.7 }]}
-                                        onPress={() => talepDetayGoster(talep)}
-                                    >
-                                        <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-                                        <Text style={[styles.talepBaslikSmall, { color: colors.text }]} numberOfLines={1}>{talep.baslik}</Text>
-                                        <Text style={[styles.tarihTextSmall, { color: colors.textMuted }]}>{formatTarih(talep.olusturmaTarihi)}</Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        )}
                     </>
                 )}
-
                 <View style={{ height: 30 }} />
             </ScrollView>
-
-            {/* Detay Modal */}
+            {/* Talep Detay Modal */}
             <Modal visible={detayModalVisible} animationType="slide" transparent onRequestClose={() => setDetayModalVisible(false)}>
-                <View style={styles.modalOverlay}>
-                    <View style={[styles.detayModal, { backgroundColor: colors.card }]}>
-                        <View style={[styles.modalHandle, { backgroundColor: isDark ? '#555' : '#ddd' }]} />
+                <TouchableWithoutFeedback onPress={() => setDetayModalVisible(false)}>
+                    <View style={styles.modalOverlay}>
+                        <TouchableWithoutFeedback onPress={() => { }}>
+                            <View style={[styles.detayModal, { backgroundColor: colors.card }]}>
+                                <View style={[styles.modalHandle, { backgroundColor: isDark ? '#555' : '#ddd' }]} />
 
-                        {seciliTalep && (
-                            <ScrollView showsVerticalScrollIndicator={false}>
-                                {/* Header */}
-                                <View style={styles.detayHeader}>
-                                    <View style={{ flex: 1 }}>
-                                        {seciliTalep.oncelik === 'acil' && (
-                                            <View style={[styles.acilBadgeLarge, { marginBottom: 8 }]}>
-                                                <Ionicons name="warning" size={14} color="#fff" />
-                                                <Text style={styles.acilTextLarge}>ACİL</Text>
+                                {seciliTalep && (
+                                    <>
+                                        {/* Sticky Header */}
+                                        <View style={[styles.detayHeader, { marginBottom: 10, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: colors.border }]}>
+                                            <View style={{ flex: 1 }}>
+                                                {seciliTalep.oncelik === 'acil' && (
+                                                    <View style={[styles.acilBadgeLarge, { marginBottom: 8 }]}>
+                                                        <Ionicons name="warning" size={14} color="#fff" />
+                                                        <Text style={styles.acilTextLarge}>ACİL</Text>
+                                                    </View>
+                                                )}
+                                                <Text style={[styles.detayBaslik, { color: colors.text }]}>{seciliTalep.baslik}</Text>
                                             </View>
-                                        )}
-                                        <Text style={[styles.detayBaslik, { color: colors.text }]}>{seciliTalep.baslik}</Text>
-                                    </View>
-                                    <TouchableOpacity onPress={() => setDetayModalVisible(false)}>
-                                        <Ionicons name="close-circle" size={28} color={colors.textMuted} />
-                                    </TouchableOpacity>
-                                </View>
-
-                                {/* Müşteri Bilgisi */}
-                                <View style={[styles.musteriCard, { backgroundColor: isDark ? colors.inputBg : '#f8f9fa' }]}>
-                                    <Ionicons name="person-circle-outline" size={40} color={colors.primary} />
-                                    <View style={styles.musteriInfo}>
-                                        <Text style={[styles.musteriAdi, { color: colors.text }]}>{seciliTalep.musteriAdi}</Text>
-                                        <TouchableOpacity>
-                                            <Text style={[styles.musteriTelefon, { color: colors.primary }]}>📞 {seciliTalep.musteriTelefon}</Text>
-                                        </TouchableOpacity>
-                                    </View>
-                                </View>
-
-                                {/* Konum */}
-                                <View style={styles.detaySection}>
-                                    <Text style={[styles.detaySectionTitle, { color: colors.text }]}>📍 Konum</Text>
-                                    <Text style={[styles.detayInfo, { color: colors.textSecondary }]}>
-                                        {seciliTalep.projeAdi} {seciliTalep.blokAdi && `• ${seciliTalep.blokAdi}`} {seciliTalep.daireNo && `• Daire ${seciliTalep.daireNo}`}
-                                    </Text>
-                                </View>
-
-                                {/* Açıklama */}
-                                {seciliTalep.aciklama && (
-                                    <View style={styles.detaySection}>
-                                        <Text style={[styles.detaySectionTitle, { color: colors.text }]}>📝 Açıklama</Text>
-                                        <Text style={[styles.detayAciklama, { color: colors.textSecondary }]}>{seciliTalep.aciklama}</Text>
-                                    </View>
-                                )}
-
-                                {/* Fotoğraflar */}
-                                {seciliTalep.fotograflar && seciliTalep.fotograflar.length > 0 && (
-                                    <View style={styles.detaySection}>
-                                        <Text style={[styles.detaySectionTitle, { color: colors.text }]}>📸 Fotoğraflar</Text>
-                                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.detayFotoScroll}>
-                                            {seciliTalep.fotograflar.map((foto, index) => (
-                                                <TouchableOpacity key={index} onPress={() => setTamEkranFoto(foto)}>
-                                                    <OptimizedImage source={{ uri: foto }} style={styles.detayFoto} />
-                                                </TouchableOpacity>
-                                            ))}
-                                        </ScrollView>
-                                    </View>
-                                )}
-
-                                {/* Yorumlar */}
-                                {seciliTalep.yorumlar && seciliTalep.yorumlar.length > 0 && (
-                                    <View style={styles.detaySection}>
-                                        <Text style={[styles.detaySectionTitle, { color: colors.text }]}>💬 Yorumlar</Text>
-                                        {seciliTalep.yorumlar.map((yorum, idx) => (
-                                            <View key={idx} style={[styles.yorumItem, { backgroundColor: isDark ? colors.inputBg : '#f8f9fa' }]}>
-                                                <Text style={[styles.yorumYazan, { color: colors.primary }]}>{yorum.yazanAdi}</Text>
-                                                <Text style={[styles.yorumMesaj, { color: colors.text }]}>{yorum.mesaj}</Text>
-                                            </View>
-                                        ))}
-                                    </View>
-                                )}
-
-                                {/* Durum Güncelleme */}
-                                {seciliTalep.durum !== 'cozuldu' && (
-                                    <View style={styles.detaySection}>
-                                        <Text style={[styles.detaySectionTitle, { color: colors.text }]}>🔄 Durum Güncelle</Text>
-                                        <View style={styles.durumButonlar}>
-                                            {durumSecenekleri.map((secenek) => (
-                                                <TouchableOpacity
-                                                    key={secenek.value}
-                                                    style={[
-                                                        styles.durumButon,
-                                                        { borderColor: secenek.color },
-                                                        seciliTalep.durum === secenek.value && { backgroundColor: secenek.color }
-                                                    ]}
-                                                    onPress={() => {
-                                                        if (secenek.value === 'cozuldu') {
-                                                            setCozumModalVisible(true);
-                                                        } else {
-                                                            durumGuncelle(secenek.value);
-                                                        }
-                                                    }}
-                                                    disabled={islemYukleniyor}
-                                                >
-                                                    <Ionicons
-                                                        name={secenek.icon as any}
-                                                        size={18}
-                                                        color={seciliTalep.durum === secenek.value ? '#fff' : secenek.color}
-                                                    />
-                                                    <Text style={[
-                                                        styles.durumButonText,
-                                                        { color: seciliTalep.durum === secenek.value ? '#fff' : secenek.color }
-                                                    ]}>
-                                                        {secenek.label}
-                                                    </Text>
-                                                </TouchableOpacity>
-                                            ))}
+                                            <TouchableOpacity onPress={() => setDetayModalVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                                                <Ionicons name="close-circle" size={32} color={colors.textMuted} />
+                                            </TouchableOpacity>
                                         </View>
-                                    </View>
+
+                                        <ScrollView showsVerticalScrollIndicator={false}>
+                                            <View style={{ height: 10 }} />
+
+                                            {/* Müşteri Bilgisi */}
+                                            <View style={[styles.musteriCard, { backgroundColor: isDark ? colors.inputBg : '#f8f9fa' }]}>
+                                                <Ionicons name="person-circle-outline" size={40} color={colors.primary} />
+                                                <View style={styles.musteriInfo}>
+                                                    <Text style={[styles.musteriAdi, { color: colors.text }]}>{seciliTalep.musteriAdi}</Text>
+                                                    <TouchableOpacity>
+                                                        <Text style={[styles.musteriTelefon, { color: colors.primary }]}>📞 {seciliTalep.musteriTelefon}</Text>
+                                                    </TouchableOpacity>
+                                                </View>
+                                            </View>
+
+                                            {/* Konum */}
+                                            <View style={styles.detaySection}>
+                                                <Text style={[styles.detaySectionTitle, { color: colors.text }]}>📍 Konum</Text>
+                                                <Text style={[styles.detayInfo, { color: colors.textSecondary }]}>
+                                                    {seciliTalep.projeAdi} {seciliTalep.blokAdi && `• ${seciliTalep.blokAdi}`} {seciliTalep.daireNo && `• Daire ${seciliTalep.daireNo}`}
+                                                </Text>
+                                            </View>
+
+                                            {/* Açıklama */}
+                                            {seciliTalep.aciklama && (
+                                                <View style={styles.detaySection}>
+                                                    <Text style={[styles.detaySectionTitle, { color: colors.text }]}>📝 Açıklama</Text>
+                                                    <Text style={[styles.detayAciklama, { color: colors.textSecondary }]}>{seciliTalep.aciklama}</Text>
+                                                </View>
+                                            )}
+
+                                            {/* Fotoğraflar */}
+                                            {seciliTalep.fotograflar && seciliTalep.fotograflar.length > 0 && (
+                                                <View style={styles.detaySection}>
+                                                    <Text style={[styles.detaySectionTitle, { color: colors.text }]}>📸 Fotoğraflar</Text>
+                                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.detayFotoScroll}>
+                                                        {seciliTalep.fotograflar.map((foto, index) => (
+                                                            <TouchableOpacity key={index} onPress={() => setTamEkranFoto(foto)}>
+                                                                <OptimizedImage source={{ uri: foto }} style={styles.detayFoto} />
+                                                            </TouchableOpacity>
+                                                        ))}
+                                                    </ScrollView>
+                                                </View>
+                                            )}
+
+                                            {/* ------------- SOHBET/MESAJLAR ------------- */}
+                                            <View style={styles.detaySection}>
+                                                <Text style={[styles.detaySectionTitle, { color: colors.text }]}>💬 Mesajlar</Text>
+
+                                                <View style={[styles.chatContainer, { backgroundColor: isDark ? '#1a1a1a' : '#f5f5f5', borderColor: colors.border }]}>
+                                                    {(!seciliTalep.yorumlar || seciliTalep.yorumlar.length === 0) ? (
+                                                        <View style={styles.emptyChat}>
+                                                            <Text style={[styles.emptyChatText, { color: colors.textSecondary }]}>Henüz mesaj yok.</Text>
+                                                        </View>
+                                                    ) : (
+                                                        seciliTalep.yorumlar.map((mesaj, idx) => {
+                                                            const isMe = mesaj.yazanId === user?.uid;
+                                                            return (
+                                                                <View key={idx} style={[
+                                                                    styles.messageBubble,
+                                                                    isMe ? styles.messageBubbleMe : styles.messageBubbleOther,
+                                                                    { backgroundColor: isMe ? colors.primary : (isDark ? '#333' : '#e0e0e0') }
+                                                                ]}>
+                                                                    <Text style={[styles.messageAuthor, { color: isMe ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]}>
+                                                                        {mesaj.yazanAdi} ({mesaj.yazanRol === 'teknisyen' ? 'Teknisyen' : 'Müşteri'})
+                                                                    </Text>
+                                                                    <Text style={[styles.messageText, { color: isMe ? '#fff' : (isDark ? '#fff' : '#000') }]}>
+                                                                        {mesaj.mesaj}
+                                                                    </Text>
+                                                                </View>
+                                                            );
+                                                        })
+                                                    )}
+                                                </View>
+                                            </View>
+
+                                            {/* Durum Güncelleme */}
+                                            {seciliTalep.durum !== 'cozuldu' && (
+                                                <View style={styles.detaySection}>
+                                                    <Text style={[styles.detaySectionTitle, { color: colors.text }]}>🔄 Durum Güncelle</Text>
+                                                    <View style={styles.durumButonlar}>
+                                                        {durumSecenekleri.map((secenek) => (
+                                                            <TouchableOpacity
+                                                                key={secenek.value}
+                                                                style={[
+                                                                    styles.durumButon,
+                                                                    { borderColor: secenek.color },
+                                                                    seciliTalep.durum === secenek.value && { backgroundColor: secenek.color }
+                                                                ]}
+                                                                onPress={() => {
+                                                                    if (secenek.value === 'cozuldu') {
+                                                                        setCozumModalVisible(true);
+                                                                    } else {
+                                                                        durumGuncelle(secenek.value);
+                                                                    }
+                                                                }}
+                                                                disabled={islemYukleniyor}
+                                                            >
+                                                                <Ionicons
+                                                                    name={secenek.icon as any}
+                                                                    size={18}
+                                                                    color={seciliTalep.durum === secenek.value ? '#fff' : secenek.color}
+                                                                />
+                                                                <Text style={[
+                                                                    styles.durumButonText,
+                                                                    { color: seciliTalep.durum === secenek.value ? '#fff' : secenek.color }
+                                                                ]}>
+                                                                    {secenek.label}
+                                                                </Text>
+                                                            </TouchableOpacity>
+                                                        ))}
+                                                    </View>
+                                                </View>
+                                            )}
+
+                                            {/* Mesaj Input - Inline */}
+                                            {seciliTalep.durum !== 'kapatildi' && (
+                                                <View style={styles.inputContainer}>
+                                                    <TextInput
+                                                        style={[styles.miniInput, { backgroundColor: isDark ? '#333' : '#fff', color: colors.text, borderColor: colors.border }]}
+                                                        placeholder="Mesaj yazın..."
+                                                        placeholderTextColor={colors.textMuted}
+                                                        value={yeniYorum}
+                                                        onChangeText={setYeniYorum}
+                                                        multiline
+                                                    />
+                                                    <TouchableOpacity
+                                                        style={[styles.sendButton, { backgroundColor: colors.primary, opacity: (!yeniYorum.trim() || islemYukleniyor) ? 0.5 : 1 }]}
+                                                        onPress={yorumEkle}
+                                                        disabled={!yeniYorum.trim() || islemYukleniyor}
+                                                    >
+                                                        {islemYukleniyor ? (
+                                                            <ActivityIndicator size="small" color="#fff" />
+                                                        ) : (
+                                                            <Ionicons name="send" size={18} color="#fff" />
+                                                        )}
+                                                    </TouchableOpacity>
+                                                </View>
+                                            )}
+                                            <View style={{ height: 20 }} />
+                                        </ScrollView>
+                                    </>
                                 )}
-
-                                {/* Yorum Ekle Butonu */}
-                                <TouchableOpacity
-                                    style={[styles.yorumEkleButon, { backgroundColor: colors.primary }]}
-                                    onPress={() => setYorumModalVisible(true)}
-                                >
-                                    <Ionicons name="chatbubble-ellipses-outline" size={20} color="#fff" />
-                                    <Text style={styles.yorumEkleText}>Yorum Ekle</Text>
-                                </TouchableOpacity>
-
-                                <View style={{ height: 20 }} />
-                            </ScrollView>
-                        )}
+                            </View>
+                        </TouchableWithoutFeedback>
                     </View>
-                </View>
-            </Modal>
-
-            {/* Yorum Modal */}
-            <Modal visible={yorumModalVisible} animationType="slide" transparent onRequestClose={() => setYorumModalVisible(false)}>
-                <View style={styles.modalOverlay}>
-                    <View style={[styles.yorumModal, { backgroundColor: colors.card }]}>
-                        <Text style={[styles.yorumModalTitle, { color: colors.text }]}>💬 Yorum Ekle</Text>
-                        <TextInput
-                            style={[styles.yorumInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                            placeholder="Yorumunuzu yazın..."
-                            placeholderTextColor={colors.textMuted}
-                            multiline
-                            numberOfLines={4}
-                            value={yeniYorum}
-                            onChangeText={setYeniYorum}
-                        />
-                        <View style={styles.yorumButonlar}>
-                            <TouchableOpacity
-                                style={[styles.yorumIptal, { borderColor: colors.border }]}
-                                onPress={() => { setYorumModalVisible(false); setYeniYorum(''); }}
-                            >
-                                <Text style={[styles.yorumIptalText, { color: colors.textSecondary }]}>İptal</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.yorumGonder, { backgroundColor: colors.primary }]}
-                                onPress={yorumEkle}
-                                disabled={islemYukleniyor || !yeniYorum.trim()}
-                            >
-                                {islemYukleniyor ? (
-                                    <ActivityIndicator color="#fff" size="small" />
-                                ) : (
-                                    <Text style={styles.yorumGonderText}>Gönder</Text>
-                                )}
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
+                </TouchableWithoutFeedback>
             </Modal>
 
             {/* Çözüm Modal */}
@@ -901,9 +928,12 @@ const styles = StyleSheet.create({
     durumBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, gap: 5 },
     durumText: { fontSize: 11, fontWeight: '700' },
     talepBaslik: { fontSize: 17, fontWeight: '700', marginBottom: 10, lineHeight: 22 },
+    talepAciklama: { fontSize: 13, lineHeight: 18, marginBottom: 12 },
     infoRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
     infoText: { fontSize: 13, fontWeight: '500' },
     talepFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, marginTop: 4, borderTopWidth: 1 },
+    footerItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    footerText: { fontSize: 12, fontWeight: '500' },
     footerLeft: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     tarihText: { fontSize: 11 },
     yorumIndicator: { flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -984,4 +1014,94 @@ const styles = StyleSheet.create({
     cozumOnaylaText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
     infoBubble: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 12 },
     infoBubbleText: { flex: 1, fontSize: 12 },
+    // TAB STYLES
+    tabContainer: {
+        flexDirection: 'row',
+        paddingHorizontal: 20,
+        paddingTop: 10,
+        backgroundColor: 'transparent',
+        marginBottom: 10,
+    },
+    tabButton: {
+        marginRight: 20,
+        paddingVertical: 10,
+        borderBottomWidth: 3,
+        borderBottomColor: 'transparent',
+    },
+    activeTabButton: {
+        borderBottomColor: '#2b5876', // Primary Color
+    },
+    tabText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#666',
+    },
+    activeTabText: {
+        color: '#2b5876', // Primary Color
+        fontWeight: '700',
+    },
+    // SOHBET STYLES
+    chatContainer: {
+        borderRadius: 12,
+        padding: 12,
+        minHeight: 150,
+        maxHeight: 250,
+        marginBottom: 10,
+        borderWidth: 1,
+    },
+    emptyChat: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        opacity: 0.6,
+        padding: 20,
+    },
+    emptyChatText: {
+        fontSize: 14,
+        fontStyle: 'italic',
+    },
+    messageBubble: {
+        padding: 10,
+        borderRadius: 12,
+        marginBottom: 8,
+        maxWidth: '80%',
+    },
+    messageBubbleMe: {
+        alignSelf: 'flex-end',
+        borderBottomRightRadius: 2,
+    },
+    messageBubbleOther: {
+        alignSelf: 'flex-start',
+        borderBottomLeftRadius: 2,
+    },
+    messageAuthor: {
+        fontSize: 10,
+        marginBottom: 2,
+        fontWeight: 'bold',
+    },
+    messageText: {
+        fontSize: 13,
+        lineHeight: 18,
+    },
+    inputContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    miniInput: {
+        flex: 1,
+        borderRadius: 20,
+        borderWidth: 1,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        fontSize: 13,
+        maxHeight: 80,
+    },
+    sendButton: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
 });

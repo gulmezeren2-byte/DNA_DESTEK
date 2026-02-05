@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     FlatList,
     KeyboardAvoidingView,
     Modal,
@@ -23,6 +24,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { createUser, getAllUsers, updateUser } from '../../services/authService';
 import toast from '../../services/toastService';
+import { deleteUser, updateUserRole } from '../../services/userService';
 import { validateUserForm } from '../../utils/validation';
 
 interface Kullanici {
@@ -31,7 +33,7 @@ interface Kullanici {
     ad: string;
     soyad: string;
     telefon?: string;
-    rol: 'musteri' | 'teknisyen' | 'yonetim';
+    rol: 'musteri' | 'teknisyen' | 'yonetim' | 'yonetim_kurulu';
     kategori?: string;
     aktif: boolean;
     olusturmaTarihi?: { seconds: number };
@@ -41,12 +43,13 @@ const rolConfig: Record<string, { label: string; color: string; icon: string }> 
     musteri: { label: 'Müşteri', color: '#1565c0', icon: 'person' },
     teknisyen: { label: 'Teknisyen', color: '#ef6c00', icon: 'construct' },
     yonetim: { label: 'Yönetim', color: '#7b1fa2', icon: 'shield-checkmark' },
+    yonetim_kurulu: { label: 'Yönetim Kurulu', color: '#1a237e', icon: 'business' },
 };
 
 const kategoriSecenekleri = ['Tesisat', 'Elektrik', 'Boya', 'Mobilya', 'Pencere', 'Kapı', 'Diğer'];
 
 export default function KullanicilarScreen() {
-    const { user, isYonetim } = useAuth();
+    const { user, isYonetim, isBoardMember } = useAuth();
     const { isDark, colors } = useTheme();
     const router = useRouter();
 
@@ -82,10 +85,16 @@ export default function KullanicilarScreen() {
         ad: '',
         soyad: '',
         telefon: '',
-        rol: 'musteri' as 'musteri' | 'teknisyen' | 'yonetim',
+        rol: 'musteri' as 'musteri' | 'teknisyen' | 'yonetim' | 'yonetim_kurulu',
         kategori: '',
     });
     const [kaydetmeYukleniyor, setKaydetmeYukleniyor] = useState(false);
+
+    // Edit Role Modal
+    const [editModalVisible, setEditModalVisible] = useState(false);
+    const [editingUser, setEditingUser] = useState<Kullanici | null>(null);
+    const [selectedRole, setSelectedRole] = useState<string>('musteri');
+    const [isEditingBg, setIsEditingBg] = useState(false);
 
     // Admin şifre modalı
     const [adminSifreModalVisible, setAdminSifreModalVisible] = useState(false);
@@ -120,6 +129,10 @@ export default function KullanicilarScreen() {
 
     const filtrelenmisKullanicilar = kullanicilar.filter(k => {
         let uygun = true;
+
+        // BOARD_RULE: Yönetim Kurulu üyeleri, Yönetici (yonetim) rolündeki kullanıcıları göremez.
+        if (isBoardMember && k.rol === 'yonetim') return false;
+
         if (filtre !== 'hepsi') uygun = k.rol === filtre;
 
         if (uygun && aramaMetni) {
@@ -193,6 +206,59 @@ export default function KullanicilarScreen() {
         setKaydetmeYukleniyor(false);
     };
 
+    const handleDeleteUser = (kullanici: Kullanici) => {
+        const performDelete = async () => {
+            setIsEditingBg(true);
+            const result = await deleteUser(kullanici.id);
+            setIsEditingBg(false);
+            if (result.success) {
+                toast.success("Kullanıcı silindi");
+                verileriYukle();
+            } else {
+                toast.error(result.message || "Silme başarısız");
+            }
+        };
+
+        if (Platform.OS === 'web') {
+            if (window.confirm(`${kullanici.ad} ${kullanici.soyad} adlı kullanıcı kalıcı olarak silinecek. Emin misiniz?`)) {
+                performDelete();
+            }
+        } else {
+            Alert.alert(
+                "Kullanıcıyı Sil",
+                `${kullanici.ad} ${kullanici.soyad} adlı kullanıcı kalıcı olarak silinecek. Emin misiniz?`,
+                [
+                    { text: "İptal", style: "cancel" },
+                    {
+                        text: "Sil",
+                        style: "destructive",
+                        onPress: performDelete
+                    }
+                ]
+            );
+        }
+    };
+
+    const openEditModal = (kullanici: Kullanici) => {
+        setEditingUser(kullanici);
+        setSelectedRole(kullanici.rol);
+        setEditModalVisible(true);
+    };
+
+    const saveRoleChange = async () => {
+        if (!editingUser) return;
+        setIsEditingBg(true);
+        const result = await updateUserRole(editingUser.id, selectedRole as any);
+        setIsEditingBg(false);
+        setEditModalVisible(false);
+        if (result.success) {
+            toast.success("Kullanıcı rolü güncellendi");
+            verileriYukle();
+        } else {
+            toast.error(result.message || "Güncelleme başarısız");
+        }
+    };
+
     const istatistikler = {
         toplam: kullanicilar.length,
         musteri: kullanicilar.filter(k => k.rol === 'musteri').length,
@@ -226,9 +292,11 @@ export default function KullanicilarScreen() {
                         <Text style={styles.headerTitle}>Kullanıcı Yönetimi</Text>
                         <Text style={styles.headerSubtitle}>Toplam {istatistikler.toplam} kullanıcı</Text>
                     </View>
-                    <TouchableOpacity style={styles.addButton} onPress={() => setModalVisible(true)}>
-                        <Ionicons name="person-add" size={22} color="#fff" />
-                    </TouchableOpacity>
+                    {!isBoardMember && (
+                        <TouchableOpacity style={styles.addButton} onPress={() => setModalVisible(true)}>
+                            <Ionicons name="person-add" size={22} color="#fff" />
+                        </TouchableOpacity>
+                    )}
                 </View>
 
                 {/* Arama */}
@@ -297,22 +365,31 @@ export default function KullanicilarScreen() {
                                         <View style={[styles.rolBadge, { backgroundColor: rol.color + '20' }]}>
                                             <Text style={[styles.rolText, { color: rol.color }]}>{rol.label}</Text>
                                         </View>
-                                        {item.kategori && (
-                                            <Text style={[styles.kategoriText, { color: colors.textMuted }]}>• {item.kategori}</Text>
+                                        {!!item.kategori && (
+                                            <Text style={[styles.kategoriText, { color: colors.textMuted }]}>
+                                                {'• ' + item.kategori}
+                                            </Text>
                                         )}
                                     </View>
                                 </View>
-                                <View style={styles.switchContainer}>
-                                    <Text style={[styles.switchLabel, { color: item.aktif ? '#4caf50' : '#f44336' }]}>
-                                        {item.aktif ? 'Aktif' : 'Pasif'}
-                                    </Text>
-                                    <Switch
-                                        value={item.aktif}
-                                        onValueChange={() => aktiflikDegistir(item)}
-                                        trackColor={{ false: '#ccc', true: '#81c784' }}
-                                        thumbColor={item.aktif ? '#4caf50' : '#f44336'}
-                                    />
-                                </View>
+                                {!isBoardMember && (
+                                    <View style={styles.actionsContainer}>
+                                        <TouchableOpacity onPress={() => openEditModal(item)} style={styles.actionBtn}>
+                                            <Ionicons name="create-outline" size={20} color={colors.primary} />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity onPress={() => handleDeleteUser(item)} style={styles.actionBtn}>
+                                            <Ionicons name="trash-outline" size={20} color="#f44336" />
+                                        </TouchableOpacity>
+                                        <View style={styles.switchContainer}>
+                                            <Switch
+                                                value={item.aktif}
+                                                onValueChange={() => aktiflikDegistir(item)}
+                                                trackColor={{ false: '#ccc', true: '#81c784' }}
+                                                thumbColor={item.aktif ? '#4caf50' : '#f44336'}
+                                            />
+                                        </View>
+                                    </View>
+                                )}
                             </View>
                         </AnimatedItem>
                     );
@@ -463,6 +540,46 @@ export default function KullanicilarScreen() {
                 </KeyboardAvoidingView>
             </Modal>
 
+            {/* Edit Role Modal */}
+            <Modal visible={editModalVisible} animationType="slide" transparent onRequestClose={() => setEditModalVisible(false)}>
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { backgroundColor: colors.card, padding: 20 }]}>
+                        <Text style={[styles.modalTitle, { color: colors.text, marginBottom: 15 }]}>Rolü Düzenle</Text>
+                        <Text style={{ color: colors.textSecondary, marginBottom: 20 }}>
+                            {editingUser?.ad} {editingUser?.soyad} adlı kullanıcının rolünü seçin:
+                        </Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                            {Object.entries(rolConfig).map(([key, config]) => (
+                                <TouchableOpacity
+                                    key={key}
+                                    style={[
+                                        styles.rolButon,
+                                        selectedRole === key && { backgroundColor: config.color, borderWidth: 0 },
+                                        selectedRole !== key && { borderWidth: 1, borderColor: colors.border, backgroundColor: 'transparent' }
+                                    ]}
+                                    onPress={() => setSelectedRole(key)}
+                                >
+                                    <Ionicons name={config.icon as any} size={18} color={selectedRole === key ? '#fff' : config.color} />
+                                    <Text style={{ marginLeft: 8, color: selectedRole === key ? '#fff' : colors.text }}>{config.label}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 20, gap: 10 }}>
+                            <TouchableOpacity onPress={() => setEditModalVisible(false)} style={{ padding: 10 }}>
+                                <Text style={{ color: colors.textSecondary }}>İptal</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={saveRoleChange}
+                                style={{ backgroundColor: colors.primary, padding: 10, borderRadius: 8 }}
+                                disabled={isEditingBg}
+                            >
+                                {isEditingBg ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff' }}>Kaydet</Text>}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
             {/* Admin Şifre Modalı */}
             <Modal visible={adminSifreModalVisible} animationType="fade" transparent onRequestClose={() => setAdminSifreModalVisible(false)}>
                 <View style={styles.modalOverlay}>
@@ -525,7 +642,9 @@ const styles = StyleSheet.create({
     rolBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
     rolText: { fontSize: 11, fontWeight: '600' },
     kategoriText: { fontSize: 11, marginLeft: 6 },
-    switchContainer: { alignItems: 'center' },
+    actionsContainer: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    actionBtn: { padding: 6, backgroundColor: 'rgba(0,0,0,0.03)', borderRadius: 8 },
+    switchContainer: { alignItems: 'center', marginLeft: 4 },
     switchLabel: { fontSize: 10, marginBottom: 4, fontWeight: '500' },
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
     modalContent: { borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '90%' },

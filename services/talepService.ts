@@ -21,6 +21,7 @@ export const createTalep = async (talepData: Omit<Talep, 'id' | 'olusturmaTarihi
     try {
         const docRef = await addDoc(collection(db, "talepler"), {
             ...talepData,
+            musteriId: talepData.musteriId || talepData.olusturanId, // Veri bütünlüğü için
             olusturmaTarihi: new Date(),
             durum: 'yeni',
             oncelik: talepData.oncelik || 'normal'
@@ -118,19 +119,29 @@ export const getTalepler = async (
                     orderBy('olusturmaTarihi', 'desc')
                 );
 
+                // 3. Assigned to Team via Member List (NEW: Robust Query)
+                const qMember = query(
+                    talesRef,
+                    where('atananEkipUyeIds', 'array-contains', userId),
+                    where('durum', 'in', activeStatuses),
+                    orderBy('olusturmaTarihi', 'desc')
+                );
+
                 // 3. New (Havuz) - if requested or default
+                // SEC-003 FIX: Must include kategori filter to match Firestore rules
                 let qNew: any = null;
                 if (!filters.durumlar || filters.durumlar.includes('yeni')) {
-                    qNew = query(talesRef, where('durum', '==', 'yeni'), orderBy('olusturmaTarihi', 'desc'), limit(50));
+                    qNew = query(talesRef, where('durum', '==', 'yeni'), where('kategori', '==', teamId), orderBy('olusturmaTarihi', 'desc'), limit(50));
                 }
 
-                const promises = [getDocs(qTeam), getDocs(qIndividual)];
+                const promises = [getDocs(qTeam), getDocs(qIndividual), getDocs(qMember)];
                 if (qNew) promises.push(getDocs(qNew));
 
                 const results = await Promise.all(promises);
                 const snapTeam = results[0];
                 const snapIndiv = results[1];
-                const snapNew = results[2];
+                const snapMember = results[2];
+                const snapNew = qNew ? results[3] : null;
 
                 const mergedMap = new Map<string, Talep>();
                 snapTeam.docs.forEach(d => {
@@ -138,6 +149,10 @@ export const getTalepler = async (
                     mergedMap.set(d.id, { ...data, id: d.id });
                 });
                 snapIndiv.docs.forEach(d => {
+                    const data = d.data() as Talep;
+                    mergedMap.set(d.id, { ...data, id: d.id });
+                });
+                snapMember.docs.forEach(d => {
                     const data = d.data() as Talep;
                     mergedMap.set(d.id, { ...data, id: d.id });
                 });
@@ -242,6 +257,7 @@ export const subscribeToTalepler = (
                 unsubscribes.push(unsub);
             } else {
                 // Multiple Listeners for Technician
+                // 1. Assigned to Team (Check both ID and Member List for robustness)
                 const qTeam = query(
                     talesRef,
                     where('atananEkipId', '==', teamId),
@@ -249,6 +265,7 @@ export const subscribeToTalepler = (
                     orderBy('olusturmaTarihi', 'desc')
                 );
 
+                // 2. Assigned to Individual
                 const qIndividual = query(
                     talesRef,
                     where('atananTeknisyenId', '==', userId),
@@ -256,19 +273,30 @@ export const subscribeToTalepler = (
                     orderBy('olusturmaTarihi', 'desc')
                 );
 
+                // 3. Assigned to Team via Member List (NEW: Robust Query)
+                const qMember = query(
+                    talesRef,
+                    where('atananEkipUyeIds', 'array-contains', userId),
+                    where('durum', 'in', activeStatuses),
+                    orderBy('olusturmaTarihi', 'desc')
+                );
+
+                // SEC-003 FIX: Must include kategori filter to match Firestore rules
                 let qNew: any = null;
                 if (!filters.durumlar || filters.durumlar.includes('yeni')) {
-                    qNew = query(talesRef, where('durum', '==', 'yeni'), orderBy('olusturmaTarihi', 'desc'), limit(50));
+                    qNew = query(talesRef, where('durum', '==', 'yeni'), where('kategori', '==', teamId), orderBy('olusturmaTarihi', 'desc'), limit(50));
                 }
 
                 let teamDocs: Talep[] = [];
                 let indivDocs: Talep[] = [];
+                let memberDocs: Talep[] = [];
                 let newDocs: Talep[] = [];
 
                 const mergeAndSend = () => {
                     const mergedMap = new Map<string, Talep>();
                     teamDocs.forEach(d => mergedMap.set(d.id, d));
                     indivDocs.forEach(d => mergedMap.set(d.id, d));
+                    memberDocs.forEach(d => mergedMap.set(d.id, d));
                     newDocs.forEach(d => {
                         if (!filters.kategori || d.kategori === filters.kategori) {
                             mergedMap.set(d.id, d);
@@ -300,6 +328,15 @@ export const subscribeToTalepler = (
                     mergeAndSend();
                 }, (err: Error) => console.log("Individual docs error", err));
                 unsubscribes.push(unsub2);
+
+                const unsubMember = onSnapshot(qMember, (snap: QuerySnapshot) => {
+                    memberDocs = snap.docs.map((d) => {
+                        const data = d.data() as Talep;
+                        return { ...data, id: d.id };
+                    });
+                    mergeAndSend();
+                }, (err: Error) => console.log("Member docs error", err));
+                unsubscribes.push(unsubMember);
 
                 if (qNew) {
                     const unsub3 = onSnapshot(qNew, (snap: QuerySnapshot) => {
@@ -369,6 +406,15 @@ export const puanlaTalep = async (talepId: string, puan: number, yorum: string):
             degerlendirme: yorum,
             degerlendirmeTarihi: new Date()
         });
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+};
+
+export const deleteTalep = async (talepId: string): Promise<ServiceResponse<void>> => {
+    try {
+        await deleteDoc(doc(db, "talepler", talepId));
         return { success: true };
     } catch (error: any) {
         return { success: false, message: error.message };

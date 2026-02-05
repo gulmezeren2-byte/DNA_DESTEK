@@ -37,10 +37,32 @@ export const getActiveEkipler = getAllEkipler;
 
 export const assignTalepToEkip = async (talepId: string, ekipId: string, ekipAdi: string): Promise<ServiceResponse<void>> => {
     try {
+        // Fetch team members first to enable efficient "My Tasks" query
+        const ekipRef = doc(db, "ekipler", ekipId);
+        const ekipSnap = await getDocs(query(collection(db, "ekipler"), where("__name__", "==", ekipId))); // getDoc alternative if not imported
+
+        let memberIds: string[] = [];
+        // Since we didn't import getDoc from firestore in the top imports (it is imported as doc, but not getDoc function), 
+        // we can use the existing getDocs logic or just import getDoc. 
+        // I will stick to existing imports or better yet, since we have 'doc', we just need 'getDoc'.
+        // Actually, looking at imports line 8, 'getDocs' is there. 'getDoc' is NOT.
+        // I will use getDocs with ID query or safer: import getDoc. But I cannot change imports easily with replace_file_content of a block.
+        // Wait, line 8 imports: getDocs.
+
+        // Let's assume passed 'ekipId' is valid.
+        const ekipQuery = query(collection(db, "ekipler"), where("__name__", "==", ekipId));
+        const ekipSnapshot = await getDocs(ekipQuery);
+
+        if (!ekipSnapshot.empty) {
+            const ekipData = ekipSnapshot.docs[0].data() as Ekip;
+            memberIds = ekipData.uyeler || [];
+        }
+
         const talepRef = doc(db, "talepler", talepId);
         await updateDoc(talepRef, {
             atananEkipId: ekipId,
             atananEkipAdi: ekipAdi,
+            atananEkipUyeIds: memberIds, // NEW: For efficient querying "array-contains"
             durum: 'atandi',
             atamaTarihi: new Date()
         });

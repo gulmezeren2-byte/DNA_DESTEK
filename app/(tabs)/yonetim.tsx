@@ -6,8 +6,10 @@ import { doc, updateDoc } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     FlatList,
     Modal,
+    Platform,
     RefreshControl,
     ScrollView,
     StatusBar,
@@ -15,7 +17,8 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View,
+    TouchableWithoutFeedback,
+    View
 } from 'react-native';
 import AnimatedItem from '../../components/AnimatedList';
 import Logo from '../../components/Logo';
@@ -25,8 +28,9 @@ import { DURUM_CONFIG } from '../../constants';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { db } from '../../firebaseConfig';
+import AuditLog from '../../services/auditService';
 import { assignTalepToEkip, getActiveEkipler } from '../../services/ekipService';
-import { getTalepler, subscribeToTalepler } from '../../services/talepService';
+import { deleteTalep, getTalepler, subscribeToTalepler } from '../../services/talepService';
 import toast from '../../services/toastService';
 import { Ekip, Talep } from '../../types';
 
@@ -378,6 +382,9 @@ export default function YonetimScreen() {
                         <TouchableOpacity style={styles.headerButton} onPress={() => router.push('/kullanicilar')}>
                             <Ionicons name="people-outline" size={22} color="#fff" />
                         </TouchableOpacity>
+                        <TouchableOpacity style={styles.headerButton} onPress={() => router.push('/projeler')}>
+                            <Ionicons name="business-outline" size={22} color="#fff" />
+                        </TouchableOpacity>
                         <TouchableOpacity style={styles.headerButton} onPress={() => router.push('/ayarlar')}>
                             <Ionicons name="settings-outline" size={22} color="#fff" />
                         </TouchableOpacity>
@@ -574,127 +581,228 @@ export default function YonetimScreen() {
 
             {/* Detay Modal */}
             <Modal visible={detayModalVisible} animationType="slide" transparent onRequestClose={() => setDetayModalVisible(false)}>
-                <View style={styles.modalOverlay}>
-                    <View style={[styles.detayModal, { backgroundColor: colors.card }]}>
-                        <View style={[styles.modalHandle, { backgroundColor: isDark ? '#555' : '#ddd' }]} />
+                <TouchableWithoutFeedback onPress={() => setDetayModalVisible(false)}>
+                    <View style={styles.modalOverlay}>
+                        <TouchableWithoutFeedback onPress={() => { }}>
+                            <View style={[styles.detayModal, { backgroundColor: colors.card }]}>
+                                <View style={[styles.modalHandle, { backgroundColor: isDark ? '#555' : '#ddd' }]} />
 
-                        {seciliTalep && (
-                            <ScrollView showsVerticalScrollIndicator={false}>
-                                <View style={styles.detayHeader}>
-                                    <View style={{ flex: 1 }}>
-                                        {seciliTalep.oncelik === 'acil' && (
-                                            <View style={[styles.acilBadgeLarge, { marginBottom: 8 }]}>
-                                                <Ionicons name="warning" size={14} color="#fff" />
-                                                <Text style={styles.acilTextLarge}>ACİL</Text>
+                                {seciliTalep && (
+                                    <>
+                                        {/* Sticky Header */}
+                                        <View style={[styles.detayHeader, { marginBottom: 10, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: colors.border }]}>
+                                            <View style={{ flex: 1 }}>
+                                                {seciliTalep.oncelik === 'acil' && (
+                                                    <View style={[styles.acilBadgeLarge, { marginBottom: 8 }]}>
+                                                        <Ionicons name="warning" size={14} color="#fff" />
+                                                        <Text style={styles.acilTextLarge}>ACİL</Text>
+                                                    </View>
+                                                )}
+                                                <Text style={[styles.detayBaslik, { color: colors.text }]}>{seciliTalep.baslik}</Text>
                                             </View>
-                                        )}
-                                        <Text style={[styles.detayBaslik, { color: colors.text }]}>{seciliTalep.baslik}</Text>
-                                    </View>
-                                    <TouchableOpacity onPress={() => setDetayModalVisible(false)}>
-                                        <Ionicons name="close-circle" size={28} color={colors.textMuted} />
-                                    </TouchableOpacity>
-                                </View>
-
-                                {/* Müşteri */}
-                                <View style={[styles.musteriCard, { backgroundColor: isDark ? colors.inputBg : '#f8f9fa' }]}>
-                                    <Ionicons name="person-circle-outline" size={40} color={colors.primary} />
-                                    <View style={styles.musteriInfo}>
-                                        <Text style={[styles.musteriAdi, { color: colors.text }]}>{seciliTalep.musteriAdi}</Text>
-                                        <Text style={[styles.musteriTelefon, { color: colors.primary }]}>📞 {seciliTalep.musteriTelefon}</Text>
-                                    </View>
-                                </View>
-
-                                {/* Konum */}
-                                <View style={styles.detaySection}>
-                                    <Text style={[styles.detaySectionTitle, { color: colors.text }]}>📍 Konum</Text>
-                                    <Text style={[styles.detayInfo, { color: colors.textSecondary }]}>
-                                        {seciliTalep.projeAdi} {seciliTalep.blokAdi && `• ${seciliTalep.blokAdi}`} {seciliTalep.daireNo && `• D.${seciliTalep.daireNo}`}
-                                    </Text>
-                                </View>
-
-                                {/* Açıklama */}
-                                {seciliTalep.aciklama && (
-                                    <View style={styles.detaySection}>
-                                        <Text style={[styles.detaySectionTitle, { color: colors.text }]}>📝 Açıklama</Text>
-                                        <Text style={[styles.detayAciklama, { color: colors.textSecondary }]}>{seciliTalep.aciklama}</Text>
-                                    </View>
-                                )}
-
-                                {/* Fotoğraflar */}
-                                {seciliTalep.fotograflar && seciliTalep.fotograflar.length > 0 && (
-                                    <View style={styles.detaySection}>
-                                        <Text style={[styles.detaySectionTitle, { color: colors.text }]}>📸 Fotoğraflar</Text>
-                                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.detayFotoScroll}>
-                                            {seciliTalep.fotograflar.map((foto, index) => (
-                                                <TouchableOpacity key={index} onPress={() => setTamEkranFoto(foto)}>
-                                                    <OptimizedImage source={{ uri: foto }} style={styles.detayFoto} />
-                                                </TouchableOpacity>
-                                            ))}
-                                        </ScrollView>
-                                    </View>
-                                )}
-
-                                {/* Öncelik */}
-                                <View style={styles.detaySection}>
-                                    <Text style={[styles.detaySectionTitle, { color: colors.text }]}>⚡ Öncelik</Text>
-                                    <View style={styles.oncelikButonlar}>
-                                        <TouchableOpacity
-                                            style={[
-                                                styles.oncelikButon,
-                                                { borderColor: '#2e7d32' },
-                                                seciliTalep.oncelik !== 'acil' && { backgroundColor: '#2e7d32' }
-                                            ]}
-                                            onPress={() => oncelikGuncelle('normal')}
-                                            disabled={islemYukleniyor}
-                                        >
-                                            <Ionicons name="checkmark-circle" size={18} color={seciliTalep.oncelik !== 'acil' ? '#fff' : '#2e7d32'} />
-                                            <Text style={{ color: seciliTalep.oncelik !== 'acil' ? '#fff' : '#2e7d32', fontWeight: '600' }}>Normal</Text>
-                                        </TouchableOpacity>
-                                        <TouchableOpacity
-                                            style={[
-                                                styles.oncelikButon,
-                                                { borderColor: '#c62828' },
-                                                seciliTalep.oncelik === 'acil' && { backgroundColor: '#c62828' }
-                                            ]}
-                                            onPress={() => oncelikGuncelle('acil')}
-                                            disabled={islemYukleniyor}
-                                        >
-                                            <Ionicons name="warning" size={18} color={seciliTalep.oncelik === 'acil' ? '#fff' : '#c62828'} />
-                                            <Text style={{ color: seciliTalep.oncelik === 'acil' ? '#fff' : '#c62828', fontWeight: '600' }}>Acil</Text>
-                                        </TouchableOpacity>
-                                    </View>
-                                </View>
-
-                                {/* Atanan Ekip */}
-                                <View style={styles.detaySection}>
-                                    <Text style={[styles.detaySectionTitle, { color: colors.text }]}>👥 Ekip</Text>
-                                    {seciliTalep.atananEkipAdi ? (
-                                        <View style={[styles.teknisyenCard, { backgroundColor: isDark ? '#1a3a5c' : '#e3f2fd' }]}>
-                                            <Ionicons name="people" size={24} color={colors.primary} />
-                                            <Text style={[styles.teknisyenName, { color: colors.primary }]}>{seciliTalep.atananEkipAdi}</Text>
-                                            <TouchableOpacity
-                                                style={[styles.degistirButon, { backgroundColor: colors.primary }]}
-                                                onPress={() => setAtamaModalVisible(true)}
-                                            >
-                                                <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>Değiştir</Text>
+                                            <TouchableOpacity onPress={() => setDetayModalVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                                                <Ionicons name="close-circle" size={32} color={colors.textMuted} />
                                             </TouchableOpacity>
                                         </View>
-                                    ) : (
-                                        <TouchableOpacity
-                                            style={[styles.ataButon, { backgroundColor: colors.primary }]}
-                                            onPress={() => setAtamaModalVisible(true)}
-                                        >
-                                            <Ionicons name="people-outline" size={20} color="#fff" />
-                                            <Text style={styles.ataButonText}>Ekip Ata</Text>
-                                        </TouchableOpacity>
-                                    )}
-                                </View>
 
-                                <View style={{ height: 20 }} />
-                            </ScrollView>
-                        )}
+                                        <ScrollView showsVerticalScrollIndicator={false}>
+                                            <View style={{ height: 10 }} />
+
+                                            {/* Müşteri */}
+                                            <View style={[styles.musteriCard, { backgroundColor: isDark ? colors.inputBg : '#f8f9fa' }]}>
+                                                <Ionicons name="person-circle-outline" size={40} color={colors.primary} />
+                                                <View style={styles.musteriInfo}>
+                                                    <Text style={[styles.musteriAdi, { color: colors.text }]}>{seciliTalep.musteriAdi}</Text>
+                                                    <Text style={[styles.musteriTelefon, { color: colors.primary }]}>📞 {seciliTalep.musteriTelefon}</Text>
+                                                </View>
+                                            </View>
+
+                                            {/* Konum */}
+                                            <View style={styles.detaySection}>
+                                                <Text style={[styles.detaySectionTitle, { color: colors.text }]}>📍 Konum</Text>
+                                                <Text style={[styles.detayInfo, { color: colors.textSecondary }]}>
+                                                    {seciliTalep.projeAdi} {seciliTalep.blokAdi && `• ${seciliTalep.blokAdi}`} {seciliTalep.daireNo && `• D.${seciliTalep.daireNo}`}
+                                                </Text>
+                                            </View>
+
+                                            {/* Açıklama */}
+                                            {seciliTalep.aciklama && (
+                                                <View style={styles.detaySection}>
+                                                    <Text style={[styles.detaySectionTitle, { color: colors.text }]}>📝 Açıklama</Text>
+                                                    <Text style={[styles.detayAciklama, { color: colors.textSecondary }]}>{seciliTalep.aciklama}</Text>
+                                                </View>
+                                            )}
+
+                                            {/* Fotoğraflar */}
+                                            {seciliTalep.fotograflar && seciliTalep.fotograflar.length > 0 && (
+                                                <View style={styles.detaySection}>
+                                                    <Text style={[styles.detaySectionTitle, { color: colors.text }]}>📸 Fotoğraflar</Text>
+                                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.detayFotoScroll}>
+                                                        {seciliTalep.fotograflar.map((foto, index) => (
+                                                            <TouchableOpacity key={index} onPress={() => setTamEkranFoto(foto)}>
+                                                                <OptimizedImage source={{ uri: foto }} style={styles.detayFoto} />
+                                                            </TouchableOpacity>
+                                                        ))}
+                                                    </ScrollView>
+                                                </View>
+                                            )}
+
+                                            {/* Öncelik */}
+                                            <View style={styles.detaySection}>
+                                                <Text style={[styles.detaySectionTitle, { color: colors.text }]}>⚡ Öncelik</Text>
+                                                {/* ------------- SOHBET/MESAJLAR ------------- */}
+                                                <View style={styles.detaySection}>
+                                                    <Text style={[styles.detaySectionTitle, { color: '#333' }]}>💬 Mesajlar</Text>
+
+                                                    <View style={[styles.chatContainer, { backgroundColor: isDark ? '#1a1a1a' : '#f0f4f8', borderColor: isDark ? '#333' : '#e1e8ed' }]}>
+                                                        {(!seciliTalep.yorumlar || seciliTalep.yorumlar.length === 0) ? (
+                                                            <View style={styles.emptyChat}>
+                                                                <Ionicons name="chatbubble-ellipses-outline" size={40} color={colors.textMuted} />
+                                                                <Text style={[styles.emptyChatText, { color: colors.textMuted }]}>Bu talep için henüz mesaj yok.</Text>
+                                                            </View>
+                                                        ) : (
+                                                            seciliTalep.yorumlar.map((mesaj, idx) => {
+                                                                const isStaff = mesaj.yazanRol === 'teknisyen' || mesaj.yazanRol === 'yonetim';
+                                                                // Determine colors based on role
+                                                                const bubbleBg = isStaff
+                                                                    ? (isDark ? '#0284c7' : '#0ea5e9') // Staff: Blue
+                                                                    : (isDark ? '#333' : '#fff');   // User: White/DarkGray
+
+                                                                const textColor = isStaff
+                                                                    ? '#fff'
+                                                                    : (isDark ? '#eee' : '#1f2937');
+
+                                                                // Safely handle timestamp
+                                                                let dateStr = '';
+                                                                try {
+                                                                    const t = mesaj.tarih;
+                                                                    if (t) {
+                                                                        const d = (t as any).toDate ? (t as any).toDate() : ((t as any).seconds ? new Date((t as any).seconds * 1000) : new Date(t as any));
+                                                                        dateStr = d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+                                                                    }
+                                                                } catch (e) { }
+
+                                                                return (
+                                                                    <View key={idx} style={[
+                                                                        styles.messageBubble,
+                                                                        isStaff ? styles.messageBubbleMe : styles.messageBubbleOther,
+                                                                        { backgroundColor: bubbleBg }
+                                                                    ]}>
+                                                                        <View style={styles.messageHeader}>
+                                                                            <Text style={[styles.messageAuthor, { color: isStaff ? 'rgba(255,255,255,0.9)' : colors.primary }]}>
+                                                                                {mesaj.yazanAdi}
+                                                                            </Text>
+                                                                            {mesaj.yazanRol && (
+                                                                                <Text style={[
+                                                                                    styles.messageRoleBadge,
+                                                                                    {
+                                                                                        backgroundColor: isStaff ? 'rgba(255,255,255,0.2)' : colors.primary + '20',
+                                                                                        color: isStaff ? '#fff' : colors.primary
+                                                                                    }
+                                                                                ]}>
+                                                                                    {mesaj.yazanRol.toUpperCase()}
+                                                                                </Text>
+                                                                            )}
+                                                                        </View>
+
+                                                                        <Text style={[styles.messageText, { color: textColor }]}>
+                                                                            {mesaj.mesaj}
+                                                                        </Text>
+
+                                                                        {dateStr && (
+                                                                            <Text style={[styles.messageTime, { color: isStaff ? 'rgba(255,255,255,0.7)' : colors.textMuted }]}>
+                                                                                {dateStr}
+                                                                            </Text>
+                                                                        )}
+                                                                    </View>
+                                                                );
+                                                            })
+                                                        )}
+                                                    </View>
+                                                </View>
+
+
+                                            </View>
+
+                                            {/* Atanan Ekip */}
+                                            <View style={styles.detaySection}>
+                                                <Text style={[styles.detaySectionTitle, { color: colors.text }]}>👥 Ekip</Text>
+                                                {seciliTalep.atananEkipAdi ? (
+                                                    <View style={[styles.teknisyenCard, { backgroundColor: isDark ? '#1a3a5c' : '#e3f2fd' }]}>
+                                                        <Ionicons name="people" size={24} color={colors.primary} />
+                                                        <Text style={[styles.teknisyenName, { color: colors.primary }]}>{seciliTalep.atananEkipAdi}</Text>
+                                                        <TouchableOpacity
+                                                            style={[styles.degistirButon, { backgroundColor: colors.primary }]}
+                                                            onPress={() => setAtamaModalVisible(true)}
+                                                        >
+                                                            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>Değiştir</Text>
+                                                        </TouchableOpacity>
+                                                    </View>
+                                                ) : (
+                                                    <TouchableOpacity
+                                                        style={[styles.ataButon, { backgroundColor: colors.primary }]}
+                                                        onPress={() => setAtamaModalVisible(true)}
+                                                    >
+                                                        <Ionicons name="people-outline" size={20} color="#fff" />
+                                                        <Text style={styles.ataButonText}>Ekip Ata</Text>
+                                                    </TouchableOpacity>
+                                                )}
+                                            </View>
+
+                                            <View style={{ height: 20 }} />
+
+                                            {/* ------------- SİLME BUTONU (Sadece Yöneticiler) ------------- */}
+                                            <TouchableOpacity
+                                                style={[styles.iptalButton, { backgroundColor: isDark ? '#b71c1c' : '#ef5350', marginTop: 10 }]}
+                                                onPress={() => {
+                                                    Alert.alert(
+                                                        'Talep Kalıcı Olarak Silinecek',
+                                                        'Bu işlem geri alınamaz. Devam etmek istiyor musunuz?',
+                                                        [
+                                                            { text: 'Vazgeç', style: 'cancel' },
+                                                            {
+                                                                text: 'Evet, Sil',
+                                                                style: 'destructive',
+                                                                onPress: async () => {
+                                                                    setIslemYukleniyor(true);
+                                                                    try {
+                                                                        const result = await deleteTalep(seciliTalep.id);
+                                                                        if (result.success) {
+                                                                            toast.success('Talep kalıcı olarak silindi.');
+                                                                            setDetayModalVisible(false);
+                                                                            verileriYukle(true);
+                                                                        } else {
+                                                                            toast.error('Hata: ' + result.message);
+                                                                        }
+                                                                    } catch (error: any) {
+                                                                        toast.error('Silme hatası: ' + error.message);
+                                                                    } finally {
+                                                                        setIslemYukleniyor(false);
+                                                                    }
+                                                                }
+                                                            }
+                                                        ]
+                                                    );
+                                                }}
+                                                disabled={islemYukleniyor}
+                                            >
+                                                {islemYukleniyor ? (
+                                                    <ActivityIndicator color="#fff" />
+                                                ) : (
+                                                    <>
+                                                        <Ionicons name="trash" size={20} color="#fff" />
+                                                        <Text style={styles.iptalButtonText}>Talebi Kalıcı Olarak Sil</Text>
+                                                    </>
+                                                )}
+                                            </TouchableOpacity>
+                                            <View style={{ height: 40 }} />
+                                        </ScrollView>
+                                    </>
+                                )}
+                            </View>
+                        </TouchableWithoutFeedback>
                     </View>
-                </View>
+                </TouchableWithoutFeedback>
             </Modal>
 
             {/* Atama Modal */}
@@ -769,11 +877,21 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         borderBottomLeftRadius: 30,
         borderBottomRightRadius: 30,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-        elevation: 5,
+        ...Platform.select({
+            ios: {
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.2,
+                shadowRadius: 8,
+            },
+            android: {
+                elevation: 5,
+            },
+            web: {
+                // @ts-ignore
+                boxShadow: '0px 4px 8px rgba(0, 0, 0, 0.2)',
+            }
+        }),
         zIndex: 10,
     },
     headerTop: {
@@ -910,10 +1028,23 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         marginBottom: 16,
         overflow: 'hidden',
-        boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.05)',
-        elevation: 3,
         borderWidth: 1,
         borderColor: 'rgba(0,0,0,0.05)',
+        ...Platform.select({
+            ios: {
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.05,
+                shadowRadius: 8,
+            },
+            android: {
+                elevation: 3,
+            },
+            web: {
+                // @ts-ignore
+                boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.05)',
+            }
+        }),
     },
     statusBar: {
         height: 4,
@@ -1147,6 +1278,28 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
     },
+    iptalButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 16,
+        borderRadius: 16,
+        gap: 10,
+        shadowColor: "#d32f2f",
+        shadowOffset: {
+            width: 0,
+            height: 4,
+        },
+        shadowOpacity: 0.3,
+        shadowRadius: 4.65,
+        elevation: 8,
+    },
+    iptalButtonText: {
+        color: '#fff',
+        fontWeight: 'bold',
+        fontSize: 16,
+        letterSpacing: 0.5,
+    },
     atamaModal: {
         backgroundColor: '#fff',
         marginTop: 'auto',
@@ -1191,7 +1344,7 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     teknisyenKategori: {
-        fontSize: 13,
+        fontSize: 12,
     },
     fullScreenModal: {
         flex: 1,
@@ -1209,6 +1362,80 @@ const styles = StyleSheet.create({
     fullScreenImage: {
         width: '100%',
         height: '100%',
+    },
+    // ---------------- CHAT STYLES ----------------
+    chatContainer: {
+        borderRadius: 16,
+        padding: 16,
+        maxHeight: 350,
+        minHeight: 120,
+        borderWidth: 1,
+        borderStyle: 'dashed',
+    },
+    emptyChat: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 30,
+        opacity: 0.7,
+    },
+    emptyChatText: {
+        fontSize: 15,
+        fontStyle: 'italic',
+        marginTop: 10,
+    },
+    messageBubble: {
+        padding: 12,
+        borderRadius: 16,
+        marginBottom: 12,
+        maxWidth: '80%',
+        shadowColor: "#000",
+        shadowOffset: {
+            width: 0,
+            height: 1,
+        },
+        shadowOpacity: 0.18,
+        shadowRadius: 1.00,
+        elevation: 1,
+    },
+    messageBubbleMe: {
+        alignSelf: 'flex-end',
+        borderBottomRightRadius: 2,
+        marginLeft: '20%',
+    },
+    messageBubbleOther: {
+        alignSelf: 'flex-start',
+        borderBottomLeftRadius: 2,
+        marginRight: '20%',
+    },
+    messageHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 4,
+        gap: 8,
+    },
+    messageAuthor: {
+        fontSize: 11,
+        fontWeight: 'bold',
+        opacity: 0.9,
+    },
+    messageRoleBadge: {
+        fontSize: 10,
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 8,
+        overflow: 'hidden',
+        fontWeight: '600',
+    },
+    messageText: {
+        fontSize: 15,
+        lineHeight: 22,
+    },
+    messageTime: {
+        fontSize: 10,
+        alignSelf: 'flex-end',
+        marginTop: 4,
+        opacity: 0.7,
     },
 });
 

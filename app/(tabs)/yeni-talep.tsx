@@ -206,11 +206,30 @@ export default function YeniTalepScreen() {
             );
 
             if (result.base64) {
+                // SEC-009 FIX: Validate image magic bytes to prevent MIME spoofing
+                // JPEG starts with /9j/ in base64, PNG with iVBOR, GIF with R0lG, WebP with UklGR
+                const validHeaders = ['/9j/', 'iVBOR', 'R0lG', 'UklGR'];
+                const isValidImage = validHeaders.some(header => result.base64!.startsWith(header));
+
+                if (!isValidImage) {
+                    Alert.alert('Geçersiz Dosya', 'Sadece resim dosyaları (JPEG, PNG, GIF, WebP) yüklenebilir.');
+                    setResimYukleniyor(false);
+                    return;
+                }
+
                 // Size check: Base64 is ~1.37x larger than binary. 1MB limit = ~1.3MB string.
                 // We aim for < 300KB per photo to be safe.
                 const sizeKB = Math.round((result.base64.length * 3) / 4 / 1024);
-                if (sizeKB > 500) {
-                    toast.warning(`Resim boyutu biraz yüksek (${sizeKB}KB). Firestore limitine takılabilir.`);
+
+                // SEC-009 FIX: Stricter size limit (400KB max per image)
+                if (sizeKB > 400) {
+                    Alert.alert('Dosya Çok Büyük', `Resim boyutu ${sizeKB}KB. Maksimum 400KB izin verilmektedir.`);
+                    setResimYukleniyor(false);
+                    return;
+                }
+
+                if (sizeKB > 300) {
+                    toast.warning(`Resim boyutu biraz yüksek (${sizeKB}KB).`);
                 }
 
                 const base64Uri = `data:image/jpeg;base64,${result.base64}`;
@@ -223,6 +242,7 @@ export default function YeniTalepScreen() {
             setResimYukleniyor(false);
         }
     };
+
 
     const kameradanCek = async () => {
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -456,7 +476,7 @@ export default function YeniTalepScreen() {
                     <View style={[styles.infoBubble, { backgroundColor: isDark ? '#1a3a5c' : '#e3f2fd', marginBottom: 12 }]}>
                         <Ionicons name="information-circle-outline" size={16} color={colors.primary} />
                         <Text style={[styles.infoBubbleText, { color: colors.textSecondary, fontSize: 11, marginLeft: 6 }]}>
-                            Resimler Base64 formatında kaydedilir. Firestore limiti (1MB) nedeniyle maks. 3 adet ve otomatik sıkıştırma uygulanır.
+                            Maksimum 3 adet fotoğraf yükleyebilirsiniz. Büyük boyutlu görseller otomatik olarak sıkıştırılacaktır.
                         </Text>
                     </View>
 

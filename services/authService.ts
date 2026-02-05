@@ -29,6 +29,7 @@ const normalizeRole = (role: string | undefined): UserRole => {
     const r = role.toLowerCase().trim();
     // Accept only exact canonical role values
     if (r === 'yonetim') return 'yonetim';
+    if (r === 'yonetim_kurulu') return 'yonetim_kurulu';
     if (r === 'teknisyen') return 'teknisyen';
     if (r === 'musteri') return 'musteri';
     // Unknown roles default to musteri (least privileged)
@@ -102,9 +103,16 @@ const checkAndRestoreAdminProfile = async (user: FirebaseUser): Promise<any | nu
     if (!user.email) return null;
 
     if (APP_CONFIG.ADMIN_EMAILS.includes(user.email)) {
-        console.log("Admin Whitelist Match: Checking if profile exists...");
+        console.log(`Admin Whitelist Match: Checking if profile exists for ${user.email}...`);
 
         try {
+            // SEC-012: Ensure App Check is ready before Firestore read
+            const { isAppCheckReady } = await import("../firebaseConfig");
+            await isAppCheckReady;
+
+            // Optional: Small delay to ensure auth token is fully hydrated on web
+            await new Promise(resolve => setTimeout(resolve, 500));
+
             // Check if doc exists with TIMEOUT
             const docPromise = getDoc(doc(db, "users", user.uid));
             const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Admin Check Timed Out")), 5000));
@@ -167,9 +175,15 @@ export const onAuthChange = (callback: (user: DNAUser | null) => void) => {
                     if (user) {
                         if (!user.email) return;
 
+                        console.log(`Auth state change: ${user.email} (${user.uid})`);
+
                         // --- ADMIN RECOVERY CHECK ---
                         await checkAndRestoreAdminProfile(user);
                         // ----------------------------
+
+                        // Ensure App Check is ready before Firestore calls in this callback
+                        const { isAppCheckReady } = await import("../firebaseConfig");
+                        await isAppCheckReady;
 
                         // Firestore'dan veri çekmeyi dene (Önce sunucu)
                         const userDocPromise = getUserDocSafe(user.uid);
@@ -177,10 +191,12 @@ export const onAuthChange = (callback: (user: DNAUser | null) => void) => {
                         const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 5000));
 
                         let firestoreData: any = {};
+                        let hasProfile = false;
                         try {
                             const result: any = await Promise.race([userDocPromise, timeoutPromise]);
                             if (result && result.exists()) {
                                 firestoreData = result.data();
+                                hasProfile = true;
                             } else {
                                 console.log("Firestore profile read timed out or empty, using basic auth info.");
                             }
@@ -188,7 +204,7 @@ export const onAuthChange = (callback: (user: DNAUser | null) => void) => {
                             console.warn("Firestore profile fetch failed:", e);
                         }
 
-                        let userData: any = { uid: user.uid, email: user.email, rol: 'musteri', ...firestoreData };
+                        let userData: any = { uid: user.uid, email: user.email, rol: 'musteri', hasProfile, ...firestoreData };
 
                         // Normalize role
                         const rawRole = userData.rol || userData.role;
@@ -268,7 +284,8 @@ export const loginUser = async (email: string, password: string): Promise<Servic
                         uid: user.uid,
                         email: user.email,
                         ...data,
-                        rol: effectiveRole
+                        rol: effectiveRole,
+                        hasProfile: true
                     } as DNAUser
                 }
             };

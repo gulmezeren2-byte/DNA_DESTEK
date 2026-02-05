@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Text, TextStyle } from 'react-native';
+import { Animated, Platform, Text, TextStyle } from 'react-native';
 
 interface StatsTickerProps {
     value: number;
@@ -21,7 +21,7 @@ export const StatsTicker = ({ value, style, duration = 2000, suffix = '', prefix
         Animated.timing(animatedValue, {
             toValue: value,
             duration: duration,
-            useNativeDriver: true,
+            useNativeDriver: Platform.OS !== 'web',
         }).start();
 
         return () => {

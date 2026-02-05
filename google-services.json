@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1076418517678",
+    "project_id": "dna-destek-8d312",
+    "storage_bucket": "dna-destek-8d312.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1076418517678:android:cb153aa35de1ce7dbeab3f",
+        "android_client_info": {
+          "package_name": "com.dnadestek.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD7JkFY98yQRzSrQGeUSoKDXNJptT1_SGA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

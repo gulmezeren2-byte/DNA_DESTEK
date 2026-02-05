@@ -29,7 +29,7 @@ export interface AuditLogEntry {
     action: AuditAction;
     performedBy: string; // User ID who performed the action
     performedByEmail?: string; // Email for readability
-    targetId?: string; // ID of affected resource
+    targetId?: string | null; // ID of affected resource
     targetType?: 'user' | 'talep' | 'team';
     details: Record<string, any>; // Additional context
     timestamp?: any; // Server timestamp
@@ -57,17 +57,15 @@ export const logAuditEvent = async (
 ): Promise<boolean> => {
     try {
         // Don't block on audit logging - fire and forget
+        // Scrub sensitive data
+        const { password, token, ...safeDetails } = details;
+
         const logEntry: Partial<AuditLogEntry> = {
             action,
             performedBy,
             performedByEmail,
-            targetId: targetId || undefined,
-            details: {
-                ...details,
-                // Scrub sensitive data
-                password: undefined,
-                token: undefined,
-            },
+            targetId: targetId || null, // FIX: Firestore hates undefined
+            details: safeDetails,
             timestamp: serverTimestamp(),
             clientInfo: {
                 platform: typeof navigator !== 'undefined' ? 'web' : 'mobile',

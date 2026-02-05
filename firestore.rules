@@ -9,15 +9,35 @@ service cloud.firestore {
     
     function isAdminEmail() {
       // Sunucu taraflı Admin Beyaz Listesi (Source of Truth)
-      return request.auth.token.email in ['admin@dnadestek.com', 'eren.gulmez@dnadestek.com'];
+      // SEC-012: Safe access with .get() and case-insensitivity
+      return isSignedIn() && 
+             request.auth.token.get('email', '').lower() in ['admin@dnadestek.com', 'eren.gulmez@dnadestek.com'];
     }
 
     function isAdmin() {
-      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.rol == 'yonetim';
+      // SEC-002 FIX: Admin whitelist bypass for profile-less state (Recovery)
+      // SEC-005/012: Check doc existence before field access to prevent rule crash
+      return isSignedIn() && (
+        isAdminEmail() || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.rol in ['yonetim', 'yonetim_kurulu'])
+      );
+    }
+    
+    function isManager() {
+      // Sadece 'yonetim' rolü (Yönetim Kurulu HARİÇ)
+      return isSignedIn() && (
+        isAdminEmail() || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.rol == 'yonetim')
+      );
     }
     
     function isTechnician() {
-      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.rol == 'teknisyen';
+      // SEC-012: Robust existence check
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.rol == 'teknisyen';
     }
     
     function isOwner(userId) {
@@ -29,6 +49,7 @@ service cloud.firestore {
     // =====================
     match /users/{userId} {
       // Okuma: Kendi profilini herkes, Admin/Teknisyen belirli profilleri görebilir.
+      // SEC-012: Prioritize isOwner check for performance and reliability
       allow get: if isSignedIn() && (isOwner(userId) || isAdmin() || isTechnician());
       
       // Listeleme: Sadece yöneticiler (gizlilik gereği teknisyenler listeleyemez).
@@ -50,6 +71,9 @@ service cloud.firestore {
         request.resource.data.rol == resource.data.rol && 
         request.resource.data.aktif == resource.data.aktif
       ));
+
+      // Silme: Sadece 'yonetim' rolü silebilir (Yönetim Kurulu SİLEMEZ).
+      allow delete: if isManager();
     }
 
     // =====================
@@ -61,7 +85,11 @@ service cloud.firestore {
         isAdmin() || 
         (isTechnician() && (
           resource.data.atananTeknisyenId == request.auth.uid || 
-          resource.data.atananEkipId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kategori
+          resource.data.atananEkipId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kategori ||
+          // FLOW-001: Teknisyenler kendi kategorilerindeki 'yeni' (atanmamış) talepleri görebilir
+          (resource.data.durum == 'yeni' && resource.data.kategori == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kategori) ||
+          // TEAM-002: Teknisyen ekibin uyesi ise gorebilir (Robust Team Query)
+          (resource.data.atananEkipUyeIds != null && request.auth.uid in resource.data.atananEkipUyeIds)
         )) ||
         resource.data.olusturanId == request.auth.uid ||
         resource.data.musteriId == request.auth.uid
@@ -71,7 +99,10 @@ service cloud.firestore {
       allow create: if isSignedIn() && 
         request.resource.data.olusturanId == request.auth.uid && 
         request.resource.data.durum == 'yeni' &&
-        request.resource.data.oncelik in ['normal', 'acil'];
+        request.resource.data.oncelik in ['normal', 'acil'] &&
+        // VAL-001: Veri doğrulama
+        request.resource.data.baslik.size() <= 100 &&
+        request.resource.data.aciklama.size() <= 1000;
 
       // Güncelleme:
       allow update: if isSignedIn() && (
@@ -79,7 +110,8 @@ service cloud.firestore {
         // Teknisyen: Sadece atanmış işlerin durumunu, çözümünü ve yorumlarını güncelleyebilir.
         (isTechnician() && (
           (resource.data.atananTeknisyenId == request.auth.uid || 
-           resource.data.atananEkipId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kategori) &&
+           resource.data.atananEkipId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kategori ||
+           (resource.data.atananEkipUyeIds != null && request.auth.uid in resource.data.atananEkipUyeIds)) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['durum', 'cozumTarihi', 'cozumFotograflari', 'guncellemeTarihi', 'yorumlar'])
         )) ||
         // Müşteri:
@@ -89,9 +121,14 @@ service cloud.firestore {
           // 2. İptal: Sadece durum 'yeni' ise iptal edebilir.
           (resource.data.durum == 'yeni' && request.resource.data.durum == 'iptal' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['durum', 'guncellemeTarihi'])) ||
           // 3. Puanlama: Sadece durum 'cozuldu' ise puan verebilir.
-          (resource.data.durum == 'cozuldu' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['puan', 'degerlendirme', 'degerlendirmeTarihi']))
+          (resource.data.durum == 'cozuldu' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['puan', 'degerlendirme', 'degerlendirmeTarihi'])) ||
+          // 4. Sohbet: Müşteri yorum ekleyebilir (kapatılmadığı sürece)
+          (resource.data.durum != 'kapatildi' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['yorumlar', 'guncellemeTarihi']))
         ))
       );
+
+      // Silme: Sadece yöneticiler talep silebilir (Cascading delete için gerekli).
+      allow delete: if isManager();
     }
 
     // =====================
@@ -133,8 +170,9 @@ service cloud.firestore {
       // Okuma: Sadece yöneticiler audit loglarını görebilir
       allow read: if isAdmin();
       
-      // Oluşturma: Giriş yapmış herkes log oluşturabilir (kendi actionları için)
-      allow create: if isSignedIn();
+      // Oluşturma: Giriş yapmış herkes kendi adına log oluşturabilir
+      // LOG-001: performedBy auth.uid ile eşleşmek zorunda
+      allow create: if isSignedIn() && request.resource.data.performedBy == request.auth.uid;
       
       // Güncelleme/Silme: YASAK - Loglar değiştirilemez (immutable)
       allow update, delete: if false;

@@ -44,7 +44,7 @@ const RENK_SECENEKLERI = [
 ];
 
 export default function EkiplerScreen() {
-    const { user, isYonetim } = useAuth();
+    const { user, isYonetim, isBoardMember } = useAuth();
     const { isDark, colors } = useTheme();
     const router = useRouter();
 
@@ -270,26 +270,28 @@ export default function EkiplerScreen() {
                     )}
                 </View>
             </View>
-            <View style={styles.ekipActions}>
-                <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: item.renk + '20' }]}
-                    onPress={() => uyeYonetModalAc(item)}
-                >
-                    <Ionicons name="people" size={18} color={item.renk} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: colors.primary + '20' }]}
-                    onPress={() => ekipDuzenle(item)}
-                >
-                    <Ionicons name="pencil" size={18} color={colors.primary} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: '#ef444420' }]}
-                    onPress={() => ekipSil(item)}
-                >
-                    <Ionicons name="trash" size={18} color="#ef4444" />
-                </TouchableOpacity>
-            </View>
+            {!isBoardMember && (
+                <View style={styles.ekipActions}>
+                    <TouchableOpacity
+                        style={[styles.actionButton, { backgroundColor: item.renk + '20' }]}
+                        onPress={() => uyeYonetModalAc(item)}
+                    >
+                        <Ionicons name="people" size={18} color={item.renk} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.actionButton, { backgroundColor: colors.primary + '20' }]}
+                        onPress={() => ekipDuzenle(item)}
+                    >
+                        <Ionicons name="pencil" size={18} color={colors.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.actionButton, { backgroundColor: '#ef444420' }]}
+                        onPress={() => ekipSil(item)}
+                    >
+                        <Ionicons name="trash" size={18} color="#ef4444" />
+                    </TouchableOpacity>
+                </View>
+            )}
         </View>
     );
 
@@ -325,15 +327,17 @@ export default function EkiplerScreen() {
                         <Text style={styles.headerTitle}>Ekip Yönetimi</Text>
                         <Text style={styles.headerSubtitle}>{ekipler.length} aktif ekip</Text>
                     </View>
-                    <TouchableOpacity
-                        style={styles.addButton}
-                        onPress={() => {
-                            resetForm();
-                            setEkipModalVisible(true);
-                        }}
-                    >
-                        <Ionicons name="add" size={24} color="#fff" />
-                    </TouchableOpacity>
+                    {!isBoardMember && (
+                        <TouchableOpacity
+                            style={styles.addButton}
+                            onPress={() => {
+                                resetForm();
+                                setEkipModalVisible(true);
+                            }}
+                        >
+                            <Ionicons name="add" size={24} color="#fff" />
+                        </TouchableOpacity>
+                    )}
                 </View>
             </View>
 

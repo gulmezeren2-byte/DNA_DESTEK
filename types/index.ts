@@ -1,6 +1,6 @@
 import { Timestamp } from "firebase/firestore";
 
-export type UserRole = 'yonetim' | 'teknisyen' | 'musteri';
+export type UserRole = 'yonetim' | 'teknisyen' | 'musteri' | 'yonetim_kurulu';
 export type TalepDurum = 'yeni' | 'atandi' | 'islemde' | 'beklemede' | 'cozuldu' | 'iptal' | 'kapatildi';
 export type TalepOncelik = 'dusuk' | 'normal' | 'yuksek' | 'acil';
 
@@ -17,7 +17,7 @@ export interface DNAUser {
     olusturmaTarihi: Date | Timestamp;
     olusturan?: string;
     avatar?: string;
-    // pushToken is now stored in push_tokens collection, removed here.
+    hasProfile?: boolean; // USER-001: Firestore profil dokümanı var mı?
 }
 
 export interface Talep {
@@ -42,6 +42,7 @@ export interface Talep {
     olusturanId: string;
     olusturanAd?: string;
     olusturanTelefon?: string;
+    musteriId?: string; // New: Explicit customer ID for indexing
 
     // Contact (if distinct from creator)
     musteriAdi?: string;    // Legacy/Alternative
@@ -72,6 +73,8 @@ export interface Talep {
 
     // Timestamps
     olusturmaTarihi: Date | Timestamp | { seconds: number, nanoseconds: number };
+    cozumTarihi?: Date | Timestamp | { seconds: number, nanoseconds: number }; // NEW
+    cozumFotograflari?: string[]; // NEW
     tamamlanmaTarihi?: Date | Timestamp;
 
     // Feedback
