@@ -7,6 +7,7 @@ import { arrayUnion, collection, doc, Firestore, limit, onSnapshot, orderBy, que
 import React, { useCallback, useEffect, useState } from 'react';
 
 import { ActivityIndicator, Modal, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import ChatSection from '../../components/ChatSection'; // Import ChatSection
 import Logo from '../../components/Logo';
 import OptimizedImage from '../../components/OptimizedImage';
 import { ListSkeleton } from '../../components/Skeleton';
@@ -36,7 +37,8 @@ const durumConfig: Record<string, { label: string; text: string; bg: string; tex
 };
 
 export default function TeknisyenScreen() {
-    const { user, isTeknisyen } = useAuth();
+    // @ts-ignore
+    const { user, isTeknisyen, originalRole } = useAuth();
     const { isDark, colors } = useTheme();
     const router = useRouter();
 
@@ -63,7 +65,6 @@ export default function TeknisyenScreen() {
     const [refreshing, setRefreshing] = useState(false);
     const [seciliTalep, setSeciliTalep] = useState<Talep | null>(null);
     const [detayModalVisible, setDetayModalVisible] = useState(false);
-    const [yeniYorum, setYeniYorum] = useState('');
     const [islemYukleniyor, setIslemYukleniyor] = useState(false);
     const [tamEkranFoto, setTamEkranFoto] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'aktif' | 'gecmis'>('aktif');
@@ -72,6 +73,15 @@ export default function TeknisyenScreen() {
     const [cozumModalVisible, setCozumModalVisible] = useState(false);
     const [cozumFotograflari, setCozumFotograflari] = useState<string[]>([]);
     const [yukleniyorFoto, setYukleniyorFoto] = useState(false);
+
+    // Başlangıç Fotoğrafı (Zorunlu)
+    const [baslangicModalVisible, setBaslangicModalVisible] = useState(false);
+    const [baslangicFoto, setBaslangicFoto] = useState<string | null>(null);
+
+    // Excel Integration Fields
+    const [cozumAciklamasi, setCozumAciklamasi] = useState('');
+    const [cozumMalzemeler, setCozumMalzemeler] = useState('');
+    const [cozumMaliyet, setCozumMaliyet] = useState('');
 
     const pickImage = async () => {
         if (cozumFotograflari.length >= 3) {
@@ -112,8 +122,67 @@ export default function TeknisyenScreen() {
         setCozumFotograflari(yeniFotograflar);
     };
 
+    const pickBaslangicImage = async () => {
+        const result = await ImagePicker.launchCameraAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [4, 3],
+            quality: 0.7,
+        });
+
+        if (!result.canceled) {
+            const manipResult = await ImageManipulator.manipulateAsync(
+                result.assets[0].uri,
+                [{ resize: { width: 800 } }],
+                { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+            );
+
+            if (manipResult.base64) {
+                const base64Uri = `data:image/jpeg;base64,${manipResult.base64}`;
+                setBaslangicFoto(base64Uri);
+            }
+        }
+    };
+
+    const baslaticiKaydet = async () => {
+        if (!seciliTalep) return;
+        if (!baslangicFoto) {
+            toast.warning('Lütfen işe başlamadan önce bir fotoğraf çekin.');
+            return;
+        }
+
+        setIslemYukleniyor(true);
+        try {
+            await updateDoc(doc(db as Firestore, 'talepler', seciliTalep.id), {
+                durum: 'islemde',
+                guncellemeTarihi: Timestamp.now(),
+                ilkMudahaleTarihi: Timestamp.now(),
+                baslangicFotrafi: baslangicFoto
+            });
+
+            if (user) {
+                AuditLog.talepStatusChanged(user.id, user.email, seciliTalep.id, seciliTalep.durum, 'islemde');
+            }
+
+            toast.success('İşleme alındı! 🚀');
+            setBaslangicModalVisible(false);
+            setBaslangicFoto(null);
+            setDetayModalVisible(false); // Opsiyonel: Detay penceresini kapat
+        } catch (error: any) {
+            toast.error('Hata: ' + error.message);
+        } finally {
+            setIslemYukleniyor(false);
+        }
+    };
+
     const cozumKaydet = async () => {
         if (!seciliTalep) return;
+
+        // Validation: En az 1 fotoğraf
+        if (cozumFotograflari.length === 0) {
+            toast.warning('Lütfen yapılan işi belgelemek için en az 1 fotoğraf ekleyin.');
+            return;
+        }
 
         setIslemYukleniyor(true);
         setYukleniyorFoto(true);
@@ -124,7 +193,10 @@ export default function TeknisyenScreen() {
             await updateDoc(doc(db as Firestore, 'talepler', seciliTalep.id), {
                 durum: 'cozuldu',
                 cozumTarihi: Timestamp.now(),
-                cozumFotograflari: cozumUrls
+                cozumFotograflari: cozumUrls,
+                cozumAciklamasi: cozumAciklamasi,
+                kullanilanMalzemeler: cozumMalzemeler ? cozumMalzemeler.split(',').map(s => s.trim()).filter(s => s) : [],
+                maliyet: cozumMaliyet ? parseFloat(cozumMaliyet) : 0
             });
 
             // SEC-001 FIX: Client-side notification kaldırıldı
@@ -134,6 +206,9 @@ export default function TeknisyenScreen() {
             setCozumModalVisible(false);
             setDetayModalVisible(false);
             setCozumFotograflari([]);
+            setCozumAciklamasi('');
+            setCozumMalzemeler('');
+            setCozumMaliyet('');
         } catch (error: any) {
             toast.error('Hata: ' + error.message);
         } finally {
@@ -150,10 +225,13 @@ export default function TeknisyenScreen() {
             if (!user) return;
             setYukleniyor(true);
 
+            // @ts-ignore
+            const isAdminDebug = (originalRole === 'yonetim' || originalRole === 'yonetim_kurulu') && user.rol === 'teknisyen';
+
             try {
                 // 1. Get Team Tasks for the technician's category
                 const myTeamId = user.kategori;
-                if (!myTeamId) {
+                if (!myTeamId && !isAdminDebug) {
                     setTalepler([]);
                     setYukleniyor(false);
                     return;
@@ -174,88 +252,158 @@ export default function TeknisyenScreen() {
                 const updateState = () => {
                     const activeList = Array.from(activeMap.values());
                     const completedList = Array.from(completedMap.values());
-                    setTalepler([...activeList.sort(sortFn), ...completedList.sort(sortFn)]);
+
+                    // Client-side filter for 'Temizlik' if in Admin Debug Mode
+                    const filteredActive = isAdminDebug
+                        ? activeList.filter(t => t.kategori !== 'Temizlik')
+                        : activeList;
+
+                    setTalepler([...filteredActive.sort(sortFn), ...completedList.sort(sortFn)]);
                 };
 
-                // A. Active Listeners (Primary Team)
-                const qActive = query(
-                    collection(db as Firestore, 'talepler'),
-                    where('atananEkipId', '==', myTeamId),
-                    where('durum', 'in', activeStatus)
-                );
+                if (isAdminDebug) {
+                    // ADMIN DEBUG: Listen to ALL active tasks
+                    const qAllActive = query(
+                        collection(db as Firestore, 'talepler'),
+                        where('durum', 'in', activeStatus)
+                    );
 
-                const unsubActive = onSnapshot(qActive, (snapshot) => {
-                    snapshot.docChanges().forEach((change) => {
-                        const talep = { id: change.doc.id, ...change.doc.data() } as Talep;
-                        if (change.type === 'removed') {
-                            activeMap.delete(talep.id);
-                        } else {
-                            activeMap.set(talep.id, talep);
-                        }
+                    const unsubAll = onSnapshot(qAllActive, (snapshot) => {
+                        snapshot.docChanges().forEach((change) => {
+                            const talep = { id: change.doc.id, ...change.doc.data() } as Talep;
+                            if (change.type === 'removed') {
+                                activeMap.delete(talep.id);
+                            } else {
+                                activeMap.set(talep.id, talep);
+                            }
+                        });
+                        updateState();
+                    }, (error) => console.error("Admin debug listener error:", error));
+                    unsubscribes.push(unsubAll);
+
+                } else {
+                    // NORMAL TECHNICIAN LOGIC
+
+                    // A. Active Listeners (Primary Team)
+                    const qActive = query(
+                        collection(db as Firestore, 'talepler'),
+                        where('atananEkipId', '==', myTeamId),
+                        where('durum', 'in', activeStatus)
+                    );
+
+                    const unsubActive = onSnapshot(qActive, (snapshot) => {
+                        snapshot.docChanges().forEach((change) => {
+                            const talep = { id: change.doc.id, ...change.doc.data() } as Talep;
+                            if (change.type === 'removed') {
+                                activeMap.delete(talep.id);
+                            } else {
+                                activeMap.set(talep.id, talep);
+                            }
+                        });
+                        updateState();
+                    }, (error) => {
+                        console.error("Active tasks listener error:", error);
                     });
-                    updateState();
-                }, (error) => {
-                    console.error("Active tasks listener error:", error);
-                });
-                unsubscribes.push(unsubActive);
+                    unsubscribes.push(unsubActive);
 
-                // A2. Active Listeners (Individual Assignments) - FIX for missing tasks
-                const qIndividual = query(
-                    collection(db as Firestore, 'talepler'),
-                    where('atananTeknisyenId', '==', user.id),
-                    where('durum', 'in', activeStatus)
-                );
+                    // A2. Active Listeners (Individual Assignments)
+                    const qIndividual = query(
+                        collection(db as Firestore, 'talepler'),
+                        where('atananTeknisyenId', '==', user.id),
+                        where('durum', 'in', activeStatus)
+                    );
 
-                const unsubIndividual = onSnapshot(qIndividual, (snapshot) => {
-                    snapshot.docChanges().forEach((change) => {
-                        const talep = { id: change.doc.id, ...change.doc.data() } as Talep;
-                        if (change.type === 'removed') {
-                            activeMap.delete(talep.id);
-                        } else {
-                            activeMap.set(talep.id, talep);
-                        }
+                    const unsubIndividual = onSnapshot(qIndividual, (snapshot) => {
+                        snapshot.docChanges().forEach((change) => {
+                            const talep = { id: change.doc.id, ...change.doc.data() } as Talep;
+                            if (change.type === 'removed') {
+                                activeMap.delete(talep.id);
+                            } else {
+                                activeMap.set(talep.id, talep);
+                            }
+                        });
+                        updateState();
+                    }, (error) => {
+                        console.error("Individual tasks listener error:", error);
                     });
-                    updateState();
-                }, (error) => {
-                    console.error("Individual tasks listener error:", error);
-                });
-                unsubscribes.push(unsubIndividual);
+                    unsubscribes.push(unsubIndividual);
 
-                // A3. Active Listeners (Team Membership - Robust)
-                // This catches tasks assigned to a team where the user is a member, regardless of user.kategori matching
-                const qMember = query(
-                    collection(db as Firestore, 'talepler'),
-                    where('atananEkipUyeIds', 'array-contains', user.id),
-                    where('durum', 'in', activeStatus)
-                );
+                    // A3. Active Listeners (Team Membership)
+                    const qMember = query(
+                        collection(db as Firestore, 'talepler'),
+                        where('atananEkipUyeIds', 'array-contains', user.id),
+                        where('durum', 'in', activeStatus)
+                    );
 
-                const unsubMember = onSnapshot(qMember, (snapshot) => {
-                    snapshot.docChanges().forEach((change) => {
-                        const talep = { id: change.doc.id, ...change.doc.data() } as Talep;
-                        if (change.type === 'removed') {
-                            activeMap.delete(talep.id);
-                        } else {
-                            activeMap.set(talep.id, talep);
-                        }
+                    const unsubMember = onSnapshot(qMember, (snapshot) => {
+                        snapshot.docChanges().forEach((change) => {
+                            const talep = { id: change.doc.id, ...change.doc.data() } as Talep;
+                            if (change.type === 'removed') {
+                                activeMap.delete(talep.id);
+                            } else {
+                                activeMap.set(talep.id, talep);
+                            }
+                        });
+                        updateState();
+                    }, (error) => {
+                        console.error("Member tasks listener error:", error);
                     });
-                    updateState();
-                }, (error) => {
-                    console.error("Member tasks listener error:", error);
-                });
-                unsubscribes.push(unsubMember);
+                    unsubscribes.push(unsubMember);
 
-                // B. Completed Tasks (Primary Team - Limited)
-                const qCompleted = query(
-                    collection(db as Firestore, 'talepler'),
-                    where('atananEkipId', '==', myTeamId),
-                    where('durum', '==', 'cozuldu'),
-                    orderBy('olusturmaTarihi', 'desc'),
-                    limit(15)
-                );
+                    // C. Havuz (Pool)
+                    const qNew = query(
+                        collection(db as Firestore, 'talepler'),
+                        where('durum', '==', 'yeni'),
+                        where('kategori', '==', myTeamId),
+                        limit(20)
+                    );
+                    const unsubNew = onSnapshot(qNew, (snapshot) => {
+                        snapshot.docChanges().forEach((change) => {
+                            const talep = { id: change.doc.id, ...change.doc.data() } as Talep;
+                            if (change.type === 'removed') {
+                                activeMap.delete(talep.id);
+                            } else {
+                                activeMap.set(talep.id, talep);
+                            }
+                        });
+                        updateState();
+                    });
+                    unsubscribes.push(unsubNew);
+                }
+
+                // B. Completed Tasks (Global for now, simpler)
+                // For Admin Debug, we might want to see recent completed too?
+                // Let's keep it simple: Use myTeamId if exists, or just omit if no team.
+                // If Admin Debug, maybe fetch last 15 completed of ANY team?
+
+                let qCompleted;
+                if (isAdminDebug) {
+                    qCompleted = query(
+                        collection(db as Firestore, 'talepler'),
+                        where('durum', '==', 'cozuldu'),
+                        orderBy('olusturmaTarihi', 'desc'),
+                        limit(15)
+                    );
+                } else {
+                    qCompleted = query(
+                        collection(db as Firestore, 'talepler'),
+                        where('atananEkipId', '==', myTeamId),
+                        where('durum', '==', 'cozuldu'),
+                        orderBy('olusturmaTarihi', 'desc'),
+                        limit(15)
+                    );
+                }
 
                 const unsubCompleted = onSnapshot(qCompleted, (snapshot) => {
                     snapshot.docChanges().forEach((change) => {
                         const talep = { id: change.doc.id, ...change.doc.data() } as Talep;
+
+                        // Filter Temizlik for Admin Debug
+                        if (isAdminDebug && talep.kategori === 'Temizlik') {
+                            if (activeMap.has(talep.id)) activeMap.delete(talep.id); // Should not happen in completed map but safe check
+                            return;
+                        }
+
                         if (change.type === 'removed') {
                             completedMap.delete(talep.id);
                         } else {
@@ -267,26 +415,6 @@ export default function TeknisyenScreen() {
                     console.error("Completed tasks listener error:", error);
                 });
                 unsubscribes.push(unsubCompleted);
-
-                // C. Havuz (Pool) - Optional: If we want technicians to see new unassigned tasks
-                const qNew = query(
-                    collection(db as Firestore, 'talepler'),
-                    where('durum', '==', 'yeni'),
-                    where('kategori', '==', myTeamId), // FLOW-001: Kural ile uyumlu kategori filtresi
-                    limit(20)
-                );
-                const unsubNew = onSnapshot(qNew, (snapshot) => {
-                    snapshot.docChanges().forEach((change) => {
-                        const talep = { id: change.doc.id, ...change.doc.data() } as Talep;
-                        if (change.type === 'removed') {
-                            activeMap.delete(talep.id);
-                        } else {
-                            activeMap.set(talep.id, talep);
-                        }
-                    });
-                    updateState();
-                });
-                unsubscribes.push(unsubNew);
 
                 setYukleniyor(false);
             } catch (error) {
@@ -300,7 +428,7 @@ export default function TeknisyenScreen() {
         return () => {
             unsubscribes.forEach(u => u());
         };
-    }, [user?.uid, user?.kategori]);
+    }, [user?.uid, user?.kategori, user?.rol]); // Added user.rol dependency for switch
 
     const onRefresh = useCallback(() => {
         // Realtime olduğu için refresh sadece ekipleri ve bağlantıyı yenilemek için kullanılabilir
@@ -391,9 +519,9 @@ export default function TeknisyenScreen() {
         }
     };
 
-    // Yorum ekle
-    const yorumEkle = async () => {
-        if (!seciliTalep || !yeniYorum.trim()) return;
+    // Mesaj Gönderme (Teknisyen)
+    const handleSendMessage = async (msg: string) => {
+        if (!seciliTalep || !msg.trim()) return;
 
         setIslemYukleniyor(true);
         try {
@@ -401,7 +529,7 @@ export default function TeknisyenScreen() {
                 yazanId: user?.uid,
                 yazanAdi: `${user?.ad} ${user?.soyad}`,
                 yazanRol: 'teknisyen',
-                mesaj: yeniYorum.trim(),
+                mesaj: msg.trim(),
                 tarih: Timestamp.now(),
             };
 
@@ -409,16 +537,45 @@ export default function TeknisyenScreen() {
                 yorumlar: arrayUnion(yorum),
             });
 
-            toast.success('Yorum eklendi!');
+            toast.success('Mesaj gönderildi!');
 
-            setYeniYorum('');
-            setYeniYorum('');
-            // setYorumModalVisible(false); // Modal kaldırıldı
+            // UI Optimistic update (optional but good)
         } catch (error: any) {
             toast.error('Hata: ' + error.message);
         } finally {
             setIslemYukleniyor(false);
         }
+    };
+
+    const randevuOnayla = async (slot: any) => {
+        if (!seciliTalep) return;
+        setIslemYukleniyor(true);
+        try {
+            const confirmedSlot = { ...slot, secildi: true };
+
+            await updateDoc(doc(db as Firestore, 'talepler', seciliTalep.id), {
+                kesinlesenRandevu: confirmedSlot
+            });
+
+            toast.success('Randevu onaylandı! 📅');
+
+            // Update local state immediately for better UX
+            setSeciliTalep({
+                ...seciliTalep,
+                kesinlesenRandevu: confirmedSlot
+            });
+
+        } catch (error: any) {
+            toast.error('Randevu onaylanamadı: ' + error.message);
+        } finally {
+            setIslemYukleniyor(false);
+        }
+    };
+
+    const formatRandevuTarihi = (ts: any) => {
+        if (!ts) return '';
+        const date = ts.toDate ? ts.toDate() : new Date(ts.seconds * 1000);
+        return date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long', hour: '2-digit', minute: '2-digit' });
     };
 
     const talepDetayGoster = (talep: Talep) => {
@@ -647,6 +804,37 @@ export default function TeknisyenScreen() {
                                                 </View>
                                             )}
 
+                                            {/* Saha Ekibi (Task Force) */}
+                                            {seciliTalep.sahaEkibi && seciliTalep.sahaEkibi.length > 0 && (
+                                                <View style={styles.detaySection}>
+                                                    <Text style={[styles.detaySectionTitle, { color: colors.text }]}>👥 Saha Ekibi</Text>
+                                                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                                                        {seciliTalep.sahaEkibi.map((personel, idx) => (
+                                                            <View key={idx} style={[
+                                                                styles.kategoriBadge,
+                                                                {
+                                                                    backgroundColor: personel.rol === 'lider' ? (isDark ? '#bf360c' : '#ffe0b2') : (isDark ? '#1a3a5c' : '#e3f2fd'),
+                                                                    flexDirection: 'row',
+                                                                    alignItems: 'center',
+                                                                    gap: 6,
+                                                                    paddingVertical: 6,
+                                                                    paddingHorizontal: 12
+                                                                }
+                                                            ]}>
+                                                                <Ionicons
+                                                                    name={personel.rol === 'lider' ? "star" : "person"}
+                                                                    size={14}
+                                                                    color={personel.rol === 'lider' ? (isDark ? '#fff' : '#e65100') : (colors.primary)}
+                                                                />
+                                                                <Text style={[styles.kategoriText, { color: personel.rol === 'lider' ? (isDark ? '#fff' : '#e65100') : colors.primary, fontSize: 13 }]}>
+                                                                    {personel.ad}
+                                                                </Text>
+                                                            </View>
+                                                        ))}
+                                                    </View>
+                                                </View>
+                                            )}
+
                                             {/* Fotoğraflar */}
                                             {seciliTalep.fotograflar && seciliTalep.fotograflar.length > 0 && (
                                                 <View style={styles.detaySection}>
@@ -662,99 +850,100 @@ export default function TeknisyenScreen() {
                                             )}
 
                                             {/* ------------- SOHBET/MESAJLAR ------------- */}
-                                            <View style={styles.detaySection}>
-                                                <Text style={[styles.detaySectionTitle, { color: colors.text }]}>💬 Mesajlar</Text>
+                                            <ChatSection
+                                                talepId={seciliTalep.id}
+                                                yorumlar={seciliTalep.yorumlar}
+                                                currentUserId={user?.id}
+                                                userRole='teknisyen'
+                                                isClosed={seciliTalep.durum === 'kapatildi'}
+                                                onSend={handleSendMessage}
+                                            />
 
-                                                <View style={[styles.chatContainer, { backgroundColor: isDark ? '#1a1a1a' : '#f5f5f5', borderColor: colors.border }]}>
-                                                    {(!seciliTalep.yorumlar || seciliTalep.yorumlar.length === 0) ? (
-                                                        <View style={styles.emptyChat}>
-                                                            <Text style={[styles.emptyChatText, { color: colors.textSecondary }]}>Henüz mesaj yok.</Text>
+
+                                            {/* ------------- RANDEVU SİSTEMİ ------------- */}
+                                            {seciliTalep.randevuTercihleri && seciliTalep.randevuTercihleri.length > 0 && (
+                                                <View style={styles.detaySection}>
+                                                    <Text style={[styles.detaySectionTitle, { color: colors.text }]}>📅 Müşteri Randevu Tercihleri</Text>
+
+                                                    {seciliTalep.kesinlesenRandevu ? (
+                                                        <View style={{ backgroundColor: isDark ? '#1b5e20' : '#e8f5e9', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#4caf50' }}>
+                                                            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                                                                <Ionicons name="checkmark-circle" size={24} color="#2e7d32" />
+                                                                <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2e7d32', marginLeft: 8 }}>Randevu Onaylandı</Text>
+                                                            </View>
+                                                            <Text style={{ fontSize: 15, color: colors.text, marginLeft: 32 }}>
+                                                                {formatRandevuTarihi(seciliTalep.kesinlesenRandevu.baslangic)}
+                                                            </Text>
                                                         </View>
                                                     ) : (
-                                                        seciliTalep.yorumlar.map((mesaj, idx) => {
-                                                            const isMe = mesaj.yazanId === user?.uid;
-                                                            return (
-                                                                <View key={idx} style={[
-                                                                    styles.messageBubble,
-                                                                    isMe ? styles.messageBubbleMe : styles.messageBubbleOther,
-                                                                    { backgroundColor: isMe ? colors.primary : (isDark ? '#333' : '#e0e0e0') }
-                                                                ]}>
-                                                                    <Text style={[styles.messageAuthor, { color: isMe ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]}>
-                                                                        {mesaj.yazanAdi} ({mesaj.yazanRol === 'teknisyen' ? 'Teknisyen' : 'Müşteri'})
-                                                                    </Text>
-                                                                    <Text style={[styles.messageText, { color: isMe ? '#fff' : (isDark ? '#fff' : '#000') }]}>
-                                                                        {mesaj.mesaj}
-                                                                    </Text>
+                                                        <View style={{ gap: 10 }}>
+                                                            <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 5 }}>
+                                                                Müşteri aşağıdaki zaman aralıklarından birini talep ediyor. Uygun olanı seçip onaylayın.
+                                                            </Text>
+                                                            {seciliTalep.randevuTercihleri.map((slot, idx) => (
+                                                                <View key={idx} style={{
+                                                                    flexDirection: 'row',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'space-between',
+                                                                    padding: 12,
+                                                                    backgroundColor: isDark ? colors.inputBg : '#fff',
+                                                                    borderRadius: 12,
+                                                                    borderWidth: 1,
+                                                                    borderColor: colors.border
+                                                                }}>
+                                                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                                                        <Ionicons name="calendar-outline" size={20} color={colors.textSecondary} />
+                                                                        <Text style={{ marginLeft: 10, color: colors.text, fontWeight: '500' }}>
+                                                                            {formatRandevuTarihi(slot.baslangic)}
+                                                                        </Text>
+                                                                    </View>
+                                                                    <TouchableOpacity
+                                                                        style={{ backgroundColor: colors.primary, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8 }}
+                                                                        onPress={() => randevuOnayla(slot)}
+                                                                        disabled={islemYukleniyor}
+                                                                    >
+                                                                        {islemYukleniyor ? <ActivityIndicator color="#fff" size="small" /> : <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 12 }}>ONAYLA</Text>}
+                                                                    </TouchableOpacity>
                                                                 </View>
-                                                            );
-                                                        })
+                                                            ))}
+                                                        </View>
                                                     )}
                                                 </View>
-                                            </View>
+                                            )}
 
                                             {/* Durum Güncelleme */}
                                             {seciliTalep.durum !== 'cozuldu' && (
                                                 <View style={styles.detaySection}>
                                                     <Text style={[styles.detaySectionTitle, { color: colors.text }]}>🔄 Durum Güncelle</Text>
                                                     <View style={styles.durumButonlar}>
-                                                        {durumSecenekleri.map((secenek) => (
+                                                        {/* FLOW: Yeni/Atandı -> İşleme Al */}
+                                                        {(seciliTalep.durum === 'yeni' || seciliTalep.durum === 'atandi') && (
                                                             <TouchableOpacity
-                                                                key={secenek.value}
-                                                                style={[
-                                                                    styles.durumButon,
-                                                                    { borderColor: secenek.color },
-                                                                    seciliTalep.durum === secenek.value && { backgroundColor: secenek.color }
-                                                                ]}
-                                                                onPress={() => {
-                                                                    if (secenek.value === 'cozuldu') {
-                                                                        setCozumModalVisible(true);
-                                                                    } else {
-                                                                        durumGuncelle(secenek.value);
-                                                                    }
-                                                                }}
+                                                                style={[styles.durumButon, { borderColor: '#9c27b0', backgroundColor: '#9c27b0' }]}
+                                                                onPress={() => setBaslangicModalVisible(true)}
                                                                 disabled={islemYukleniyor}
                                                             >
-                                                                <Ionicons
-                                                                    name={secenek.icon as any}
-                                                                    size={18}
-                                                                    color={seciliTalep.durum === secenek.value ? '#fff' : secenek.color}
-                                                                />
-                                                                <Text style={[
-                                                                    styles.durumButonText,
-                                                                    { color: seciliTalep.durum === secenek.value ? '#fff' : secenek.color }
-                                                                ]}>
-                                                                    {secenek.label}
-                                                                </Text>
+                                                                <Ionicons name="construct" size={18} color="#fff" />
+                                                                <Text style={[styles.durumButonText, { color: '#fff' }]}>İşleme Al</Text>
                                                             </TouchableOpacity>
-                                                        ))}
+                                                        )}
+
+                                                        {/* FLOW: İşlemde -> Çözüldü */}
+                                                        {seciliTalep.durum === 'islemde' && (
+                                                            <TouchableOpacity
+                                                                style={[styles.durumButon, { borderColor: '#00796b', backgroundColor: '#00796b' }]}
+                                                                onPress={() => setCozumModalVisible(true)}
+                                                                disabled={islemYukleniyor}
+                                                            >
+                                                                <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                                                                <Text style={[styles.durumButonText, { color: '#fff' }]}>Çözüldü</Text>
+                                                            </TouchableOpacity>
+                                                        )}
                                                     </View>
                                                 </View>
                                             )}
 
-                                            {/* Mesaj Input - Inline */}
-                                            {seciliTalep.durum !== 'kapatildi' && (
-                                                <View style={styles.inputContainer}>
-                                                    <TextInput
-                                                        style={[styles.miniInput, { backgroundColor: isDark ? '#333' : '#fff', color: colors.text, borderColor: colors.border }]}
-                                                        placeholder="Mesaj yazın..."
-                                                        placeholderTextColor={colors.textMuted}
-                                                        value={yeniYorum}
-                                                        onChangeText={setYeniYorum}
-                                                        multiline
-                                                    />
-                                                    <TouchableOpacity
-                                                        style={[styles.sendButton, { backgroundColor: colors.primary, opacity: (!yeniYorum.trim() || islemYukleniyor) ? 0.5 : 1 }]}
-                                                        onPress={yorumEkle}
-                                                        disabled={!yeniYorum.trim() || islemYukleniyor}
-                                                    >
-                                                        {islemYukleniyor ? (
-                                                            <ActivityIndicator size="small" color="#fff" />
-                                                        ) : (
-                                                            <Ionicons name="send" size={18} color="#fff" />
-                                                        )}
-                                                    </TouchableOpacity>
-                                                </View>
-                                            )}
+
                                             <View style={{ height: 20 }} />
                                         </ScrollView>
                                     </>
@@ -762,11 +951,73 @@ export default function TeknisyenScreen() {
                             </View>
                         </TouchableWithoutFeedback>
                     </View>
-                </TouchableWithoutFeedback>
+                </TouchableWithoutFeedback >
+            </Modal >
+
+            {/* Başlangıç Modal (Mevcut Durum Fotoğrafı) */}
+            <Modal visible={baslangicModalVisible} animationType="slide" transparent onRequestClose={() => setBaslangicModalVisible(false)}>
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.cozumModal, { backgroundColor: colors.card }]}>
+                        <View style={[styles.modalHandle, { backgroundColor: isDark ? '#555' : '#ddd' }]} />
+
+                        <Text style={[styles.cozumModalTitle, { color: colors.text }]}>📸 İşe Başlangıç</Text>
+                        <Text style={[styles.cozumModalSubtitle, { color: colors.textSecondary }]}>
+                            Mevcut durumu belgelemek için lütfen fotoğraf çekin.
+                        </Text>
+
+                        {/* Fotoğraf Alanı */}
+                        <View style={{ alignItems: 'center', marginVertical: 20 }}>
+                            {baslangicFoto ? (
+                                <View style={{ position: 'relative' }}>
+                                    <OptimizedImage source={{ uri: baslangicFoto }} style={{ width: 200, height: 150, borderRadius: 12 }} />
+                                    <TouchableOpacity
+                                        style={[styles.cozumFotoSil, { top: -10, right: -10 }]}
+                                        onPress={() => setBaslangicFoto(null)}
+                                    >
+                                        <Ionicons name="close-circle" size={28} color="#ef4444" />
+                                    </TouchableOpacity>
+                                </View>
+                            ) : (
+                                <TouchableOpacity
+                                    style={{ width: '100%', height: 150, borderRadius: 12, borderWidth: 2, borderStyle: 'dashed', borderColor: colors.border, justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? colors.inputBg : '#f9f9f9' }}
+                                    onPress={pickBaslangicImage}
+                                >
+                                    <Ionicons name="camera" size={48} color={colors.primary} />
+                                    <Text style={{ marginTop: 10, color: colors.textSecondary, fontWeight: '600' }}>Fotoğraf Çek</Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+
+                        {/* Butonlar */}
+                        <View style={styles.cozumButonlar}>
+                            <TouchableOpacity
+                                style={[styles.cozumIptal, { borderColor: colors.border }]}
+                                onPress={() => setBaslangicModalVisible(false)}
+                            >
+                                <Text style={[styles.cozumIptalText, { color: colors.text }]}>Vazgeç</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.cozumOnayla, { backgroundColor: baslangicFoto ? '#9c27b0' : colors.border }]}
+                                onPress={baslaticiKaydet}
+                                disabled={!baslangicFoto || islemYukleniyor}
+                            >
+                                {islemYukleniyor ? (
+                                    <ActivityIndicator color="#fff" size="small" />
+                                ) : (
+                                    <>
+                                        <Ionicons name="play" size={20} color="#fff" />
+                                        <Text style={styles.cozumOnaylaText}>İşi Başlat</Text>
+                                    </>
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
             </Modal>
 
             {/* Çözüm Modal */}
-            <Modal visible={cozumModalVisible} animationType="slide" transparent onRequestClose={() => { setCozumModalVisible(false); setCozumFotograflari([]); }}>
+            < Modal visible={cozumModalVisible} animationType="slide" transparent onRequestClose={() => { setCozumModalVisible(false); setCozumFotograflari([]); }
+            }>
                 <View style={styles.modalOverlay}>
                     <View style={[styles.cozumModal, { backgroundColor: colors.card }]}>
                         <View style={[styles.modalHandle, { backgroundColor: isDark ? '#555' : '#ddd' }]} />
@@ -775,6 +1026,45 @@ export default function TeknisyenScreen() {
                         <Text style={[styles.cozumModalSubtitle, { color: colors.textSecondary }]}>
                             Çözüm fotoğrafları ekleyerek işi belgelendirin
                         </Text>
+
+                        {/* Excel Inputs */}
+                        <View style={{ marginBottom: 15, gap: 10 }}>
+                            <View>
+                                <Text style={{ fontSize: 12, fontWeight: 'bold', color: colors.textSecondary, marginBottom: 4 }}>Yapılan İşlem / Sonuç Raporu</Text>
+                                <TextInput
+                                    style={[styles.miniInput, { color: colors.text, borderColor: colors.border, backgroundColor: isDark ? colors.inputBg : '#fff' }]}
+                                    placeholder="Problemi nasıl çözdünüz? Yapılan işlemleri detaylı yazın."
+                                    placeholderTextColor={colors.textMuted}
+                                    multiline
+                                    value={cozumAciklamasi}
+                                    onChangeText={setCozumAciklamasi}
+                                />
+                            </View>
+
+                            <View>
+                                <Text style={{ fontSize: 12, fontWeight: 'bold', color: colors.textSecondary, marginBottom: 4 }}>Kullanılan Malzemeler (Virgülle ayırın)</Text>
+                                <TextInput
+                                    style={[styles.miniInput, { color: colors.text, borderColor: colors.border, backgroundColor: isDark ? colors.inputBg : '#fff', height: 50, minHeight: 50 }]}
+                                    placeholder="Örn: Conta, Boru, 3x Vida"
+                                    placeholderTextColor={colors.textMuted}
+                                    value={cozumMalzemeler}
+                                    onChangeText={setCozumMalzemeler}
+                                />
+                            </View>
+
+                            <View>
+                                <Text style={{ fontSize: 12, fontWeight: 'bold', color: colors.textSecondary, marginBottom: 4 }}>Kullanılan Malzemeler (Virgülle ayırın)</Text>
+                                <TextInput
+                                    style={[styles.miniInput, { color: colors.text, borderColor: colors.border, backgroundColor: isDark ? colors.inputBg : '#fff', height: 50, minHeight: 50 }]}
+                                    placeholder="Örn: Conta, Boru, 3x Vida"
+                                    placeholderTextColor={colors.textMuted}
+                                    value={cozumMalzemeler}
+                                    onChangeText={setCozumMalzemeler}
+                                />
+                            </View>
+
+                            {/* Maliyet Alanı Kaldırıldı - Sadece Sorumlu Girebilir */}
+                        </View>
 
                         {/* Fotoğraf Önizleme */}
                         <View style={styles.cozumFotoContainer}>
@@ -832,10 +1122,10 @@ export default function TeknisyenScreen() {
                         </View>
                     </View>
                 </View>
-            </Modal>
+            </Modal >
 
             {/* Tam Ekran Fotoğraf Modal */}
-            <Modal visible={!!tamEkranFoto} transparent={true} animationType="fade" onRequestClose={() => setTamEkranFoto(null)}>
+            < Modal visible={!!tamEkranFoto} transparent={true} animationType="fade" onRequestClose={() => setTamEkranFoto(null)}>
                 <View style={styles.fullScreenModal}>
                     <TouchableOpacity style={styles.closeButton} onPress={() => setTamEkranFoto(null)}>
                         <Ionicons name="close" size={30} color="#fff" />
@@ -844,7 +1134,7 @@ export default function TeknisyenScreen() {
                         <OptimizedImage source={{ uri: tamEkranFoto }} style={styles.fullScreenImage} contentFit="contain" />
                     )}
                 </View>
-            </Modal>
+            </Modal >
         </View >
     );
 }
@@ -1084,24 +1374,29 @@ const styles = StyleSheet.create({
         lineHeight: 18,
     },
     inputContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
+        flexDirection: 'column',
+        gap: 12,
+        marginTop: 10,
     },
     miniInput: {
-        flex: 1,
-        borderRadius: 20,
+        width: '100%',
+        borderRadius: 12,
         borderWidth: 1,
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        fontSize: 13,
-        maxHeight: 80,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        fontSize: 14,
+        minHeight: 80,
+        maxHeight: 120,
+        textAlignVertical: 'top',
     },
     sendButton: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
+        alignSelf: 'flex-end',
+        width: 120,
+        height: 40,
+        borderRadius: 10,
         justifyContent: 'center',
         alignItems: 'center',
+        flexDirection: 'row',
+        gap: 8,
     },
 });

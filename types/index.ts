@@ -1,6 +1,6 @@
 import { Timestamp } from "firebase/firestore";
 
-export type UserRole = 'yonetim' | 'teknisyen' | 'musteri' | 'yonetim_kurulu';
+export type UserRole = 'yonetim' | 'teknisyen' | 'musteri' | 'yonetim_kurulu' | 'sorumlu';
 export type TalepDurum = 'yeni' | 'atandi' | 'islemde' | 'beklemede' | 'cozuldu' | 'iptal' | 'kapatildi';
 export type TalepOncelik = 'dusuk' | 'normal' | 'yuksek' | 'acil';
 
@@ -20,36 +20,44 @@ export interface DNAUser {
     hasProfile?: boolean; // USER-001: Firestore profil dokümanı var mı?
 }
 
+// Görev Gücü (Field Crew) Üyesi
+export interface GorevliPersonel {
+    id: string;      // Kullanıcı ID (UID)
+    ad: string;      // Görüntülenen Ad
+    rol: 'lider' | 'destek'; // Ekip lideri mi yoksa yardımcı eleman mı?
+    atamaTarihi: any; // Timestamp
+}
+
 export interface Talep {
     id: string;
-    baslik: string;
-    aciklama: string;
-    kategori: string;
-    oncelik: TalepOncelik | string;
-    durum: TalepDurum;
-
-    // Location
+    musteriId: string;
+    musteriAdi: string;
+    musteriTelefon?: string;
+    projeId: string;
     projeAdi: string;
+    blokId?: string;
     blokAdi?: string;
     daireNo?: string;
-    adres?: string;
-    konum?: {
-        latitude: number;
-        longitude: number;
-    };
-
-    // User info
+    kategori: string;
+    baslik: string;
+    aciklama: string;
+    fotograflar: string[];
+    durum: TalepDurum; // 'yeni' | 'atandi' | 'islemde' | 'cozuldu' | 'kapatildi' | 'iptal'
+    oncelik: 'normal' | 'acil';
     olusturanId: string;
-    olusturanAd?: string;
-    olusturanTelefon?: string;
-    musteriId?: string; // New: Explicit customer ID for indexing
+    olusturanAd: string;
+    olusturanTelefon?: string; // Lint fix
+    olusturmaTarihi: any; // Timestamp
+    // Atama Bilgileri
+    atananEkipId?: string;
+    atananEkipAdi?: string;
+    atananEkipUyeIds?: string[]; // Ekipteki tüm üyelerin ID'leri (Genel ekip işi)
 
-    // Contact (if distinct from creator)
-    musteriAdi?: string;    // Legacy/Alternative
-    musteriTelefon?: string; // Legacy/Alternative
+    // YENİ: Görev Gücü (Spesifik olarak sahaya gidenler)
+    sahaEkibi?: GorevliPersonel[];
 
-    // Images
-    fotograflar: string[]; // Base64
+    atananTeknisyenId?: string; // Geri uyumluluk için (Ana Sorumlu)
+    atananTeknisyenAdi?: string; // Geri uyumluluk için
 
     // Comments
     yorumlar?: {
@@ -65,15 +73,14 @@ export interface Talep {
     }[];
 
     // Tech Assignment
-    atananTeknisyenId?: string;
-    atananTeknisyenAdi?: string;
-    atananEkipId?: string;
-    atananEkipAdi?: string;
-    atamaTarihi?: Date | Timestamp;
+
 
     // Timestamps
-    olusturmaTarihi: Date | Timestamp | { seconds: number, nanoseconds: number };
+
+    ilkMudahaleTarihi?: Date | Timestamp | { seconds: number, nanoseconds: number }; // NEW: Performance metric
+    baslangicFotrafi?: string; // NEW: Mandatory start photo
     cozumTarihi?: Date | Timestamp | { seconds: number, nanoseconds: number }; // NEW
+    kapatmaTarihi?: Date | Timestamp | { seconds: number, nanoseconds: number }; // NEW: Performance metric
     cozumFotograflari?: string[]; // NEW
     tamamlanmaTarihi?: Date | Timestamp;
 
@@ -81,6 +88,25 @@ export interface Talep {
     puan?: number;
     degerlendirme?: string;
     degerlendirmeTarihi?: Date | Timestamp;
+
+    // Appointment System
+    randevuTercihleri?: RandevuSlot[];
+    kesinlesenRandevu?: RandevuSlot;
+
+    // Excel Entegrasyonu & Yeni Alanlar
+    cozumAciklamasi?: string; // Yapılan İşlem / Müdahale Sonucu
+    kullanilanMalzemeler?: string[]; // Kullanılan Malzeme
+    maliyet?: number; // Maliyet / Tutar
+    yoneticiNotu?: string; // Özel Not (Dahili)
+    talepKanali?: 'telefon' | 'whatsapp' | 'uygulama' | 'elden' | 'web'; // Kaynak
+    garantiKapsami?: 'garanti' | 'ucretli' | 'belirsiz'; // Gri Alan Kararı
+    karariVeren?: string; // Kararı Veren Kişi/Rol
+}
+
+export interface RandevuSlot {
+    baslangic: Timestamp | { seconds: number, nanoseconds: number };
+    bitis: Timestamp | { seconds: number, nanoseconds: number };
+    secildi: boolean;
 }
 
 export interface Ekip {

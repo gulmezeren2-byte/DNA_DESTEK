@@ -3,6 +3,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { Timestamp } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -25,6 +26,14 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { getProjeler } from '../../services/ekipService';
 import { createTalep } from '../../services/talepService';
 import toast from '../../services/toastService';
+import { RandevuSlot } from '../../types';
+
+const ZIYARET_SAATLERI = [
+    { start: '08:30', end: '10:30' },
+    { start: '11:00', end: '13:00' },
+    { start: '13:30', end: '15:30' },
+    { start: '16:00', end: '18:00' },
+];
 
 // Dropdown bileşeni
 interface DropdownProps {
@@ -142,9 +151,74 @@ export default function YeniTalepScreen() {
     const [yukleniyor, setYukleniyor] = useState(false);
     const [resimYukleniyor, setResimYukleniyor] = useState(false);
 
+    // Appointment State
+    const [randevuTercihleri, setRandevuTercihleri] = useState<RandevuSlot[]>([]);
+    const [gunler, setGunler] = useState<Date[]>([]);
+
+    useEffect(() => {
+        // Generate next 7 available days (Mon-Sat)
+        const d = new Date();
+        const available: Date[] = [];
+        let count = 0;
+        while (available.length < 7) {
+            d.setDate(d.getDate() + 1); // Start from tomorrow
+            if (d.getDay() !== 0) { // Skip Sunday (0)
+                available.push(new Date(d));
+            }
+            count++;
+            if (count > 14) break; // Safety break
+        }
+        setGunler(available);
+    }, []);
+
     // Proje verileri
     const [projeler, setProjeler] = useState<Proje[]>([]);
     const [projeYukleniyor, setProjeYukleniyor] = useState(true);
+
+    const slotSec = (date: Date, start: string, end: string) => {
+        // Create timestamp for start/end
+        const [startH, startM] = start.split(':').map(Number);
+        const [endH, endM] = end.split(':').map(Number);
+
+        const startDate = new Date(date);
+        startDate.setHours(startH, startM, 0, 0);
+
+        const endDate = new Date(date);
+        endDate.setHours(endH, endM, 0, 0);
+
+        // Check if already selected
+        const existsIndex = randevuTercihleri.findIndex(r =>
+            r.baslangic.seconds === Math.floor(startDate.getTime() / 1000)
+        );
+
+        if (existsIndex > -1) {
+            // Remove
+            const updated = [...randevuTercihleri];
+            updated.splice(existsIndex, 1);
+            setRandevuTercihleri(updated);
+        } else {
+            // Add (Max 3)
+            if (randevuTercihleri.length >= 3) {
+                Platform.OS === 'web'
+                    ? alert('En fazla 3 randevu tercihi seçebilirsiniz.')
+                    : Alert.alert('Limit', 'En fazla 3 randevu tercihi seçebilirsiniz.');
+                return;
+            }
+
+            setRandevuTercihleri([...randevuTercihleri, {
+                baslangic: Timestamp.fromDate(startDate),
+                bitis: Timestamp.fromDate(endDate),
+                secildi: false
+            }]);
+        }
+    };
+
+    const isSlotSelected = (date: Date, start: string) => {
+        const [startH, startM] = start.split(':').map(Number);
+        const checkDate = new Date(date);
+        checkDate.setHours(startH, startM, 0, 0);
+        return randevuTercihleri.some(r => r.baslangic.seconds === Math.floor(checkDate.getTime() / 1000));
+    };
 
     useEffect(() => {
         if (user?.telefon) {
@@ -327,9 +401,11 @@ export default function YeniTalepScreen() {
                 olusturanId: user?.uid!,
                 olusturanAd: `${user?.ad} ${user?.soyad}`,
                 olusturanTelefon: telefon,
+                musteriId: user?.uid!,
                 musteriAdi: `${user?.ad} ${user?.soyad}`,
                 musteriTelefon: telefon,
 
+                projeId: projeler.find(p => p.ad === seciliProje)?.id || '',
                 projeAdi: seciliProje,
                 blokAdi: seciliBlok,
                 daireNo: seciliDaire,
@@ -338,6 +414,8 @@ export default function YeniTalepScreen() {
                 aciklama: aciklama,
                 fotograflar: fotograflar, // Already Base64
                 oncelik: 'normal',
+                randevuTercihleri: randevuTercihleri,
+                talepKanali: 'uygulama' // Mobil uygulamadan geldi
             });
 
 
@@ -458,6 +536,58 @@ export default function YeniTalepScreen() {
                     </View>
                 </View>
 
+
+                {/* Randevu Tercihleri */}
+                <View style={[styles.card, { backgroundColor: colors.card }]}>
+                    <Text style={[styles.cardTitle, { color: colors.text }]}>📅 Ziyaret Tercihleriniz</Text>
+
+                    <View style={[styles.infoBubble, { backgroundColor: isDark ? '#1a3a5c' : '#e3f2fd', marginBottom: 12 }]}>
+                        <Ionicons name="information-circle-outline" size={16} color={colors.primary} />
+                        <Text style={[styles.infoBubbleText, { color: colors.textSecondary, fontSize: 11, marginLeft: 6 }]}>
+                            Lütfen müsait olduğunuz 3 farklı zaman aralığı seçin.
+                        </Text>
+                    </View>
+
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 10 }}>
+                        {gunler.map((date, index) => {
+                            const dateStr = date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', weekday: 'short' });
+                            const isToday = new Date().toDateString() === date.toDateString();
+
+                            return (
+                                <View key={index} style={{ width: 140 }}>
+                                    <Text style={{ fontSize: 12, fontWeight: 'bold', color: colors.textSecondary, marginBottom: 5, textAlign: 'center' }}>
+                                        {dateStr}
+                                    </Text>
+                                    <View style={{ gap: 6 }}>
+                                        {ZIYARET_SAATLERI.map((slot, sIdx) => {
+                                            const selected = isSlotSelected(date, slot.start);
+                                            return (
+                                                <TouchableOpacity
+                                                    key={sIdx}
+                                                    style={[
+                                                        { padding: 8, borderRadius: 8, borderWidth: 1, alignItems: 'center' },
+                                                        selected
+                                                            ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                                                            : { backgroundColor: colors.inputBg, borderColor: colors.border }
+                                                    ]}
+                                                    onPress={() => slotSec(date, slot.start, slot.end)}
+                                                >
+                                                    <Text style={{ fontSize: 12, fontWeight: '600', color: selected ? '#fff' : colors.text }}>
+                                                        {slot.start} - {slot.end}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                            )
+                                        })}
+                                    </View>
+                                </View>
+                            );
+                        })}
+                    </ScrollView>
+
+                    <Text style={{ textAlign: 'right', fontSize: 12, marginTop: 5, color: randevuTercihleri.length === 3 ? '#10b981' : colors.textMuted }}>
+                        Seçilen: {randevuTercihleri.length} / 3
+                    </Text>
+                </View>
 
                 {/* Sorun Detayları */}
                 <View style={[styles.card, { backgroundColor: colors.card }]}>

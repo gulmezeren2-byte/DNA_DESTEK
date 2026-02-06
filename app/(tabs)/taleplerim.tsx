@@ -20,6 +20,7 @@ import {
     View
 } from 'react-native';
 import AnimatedItem from '../../components/AnimatedList';
+import ChatSection from '../../components/ChatSection'; // Import ChatSection
 import Logo from '../../components/Logo';
 import OptimizedImage from '../../components/OptimizedImage';
 import { ListSkeleton } from '../../components/Skeleton';
@@ -101,7 +102,8 @@ const durumConfig: Record<string, { label: string; bg: string; text: string; bgD
 };
 
 export default function TaleplerimScreen() {
-    const { user, logout } = useAuth();
+    // @ts-ignore
+    const { user, logout, originalRole } = useAuth();
     const { isDark, colors } = useTheme();
     const router = useRouter();
     // State
@@ -124,7 +126,6 @@ export default function TaleplerimScreen() {
     const [secilenPuan, setSecilenPuan] = useState(0);
     const [yorum, setYorum] = useState('');
     const [puanYukleniyor, setPuanYukleniyor] = useState(false);
-    const [yeniYorum, setYeniYorum] = useState('');
     const [mesajYukleniyor, setMesajYukleniyor] = useState(false);
     const scrollViewRef = useRef<ScrollView>(null);
 
@@ -142,6 +143,11 @@ export default function TaleplerimScreen() {
 
         if (user?.rol === 'teknisyen' && user?.kategori) {
             baseFilters.kategori = user.kategori;
+        }
+
+        // @ts-ignore
+        if ((originalRole === 'yonetim' || originalRole === 'yonetim_kurulu') && user?.rol === 'teknisyen') {
+            baseFilters.isAdminDebug = true;
         }
 
         return baseFilters;
@@ -319,16 +325,20 @@ export default function TaleplerimScreen() {
             return 'Bugün ' + date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
         } else if (days === 1) {
             return 'Dün ' + date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-        } else if (days < 7) {
-            return `${days} gün önce`;
         } else {
             return date.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' });
         }
     };
 
+    const formatRandevuTarihi = (ts: any) => {
+        if (!ts) return '';
+        const date = ts.toDate ? ts.toDate() : new Date(ts.seconds * 1000);
+        return date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long', hour: '2-digit', minute: '2-digit' });
+    };
+
     // Mesaj Gönder
-    const mesajGonder = async () => {
-        if (!seciliTalep || !yeniYorum.trim()) return;
+    const handleSendMessage = async (msg: string) => {
+        if (!seciliTalep || !msg.trim()) return;
 
         setMesajYukleniyor(true);
         try {
@@ -336,7 +346,7 @@ export default function TaleplerimScreen() {
                 yazanId: user?.uid,
                 yazanAdi: `${user?.ad} ${user?.soyad}`,
                 yazanRol: user?.rol === 'teknisyen' ? 'teknisyen' : 'musteri',
-                mesaj: yeniYorum.trim(),
+                mesaj: msg.trim(),
                 tarih: Timestamp.now(),
             };
 
@@ -346,7 +356,6 @@ export default function TaleplerimScreen() {
             });
 
             toast.success('Mesaj gönderildi');
-            setYeniYorum('');
 
             // Klavye kapat
             if (Platform.OS !== 'web') {
@@ -362,6 +371,13 @@ export default function TaleplerimScreen() {
     const talepDetayGoster = (talep: Talep) => {
         setSeciliTalep(talep);
         setDetayModalVisible(true);
+
+        // Auto-open rating if resolved and not rated
+        if (talep.durum === 'cozuldu' && !talep.puan) {
+            setTimeout(() => {
+                puanlamayiBaslat();
+            }, 500); // Slight delay for better UX after modal opens
+        }
     };
 
     // Talep iptal et
@@ -731,6 +747,8 @@ export default function TaleplerimScreen() {
                                                 </Text>
                                             </View>
 
+
+
                                             {/* Açıklama */}
                                             {seciliTalep.aciklama && (
                                                 <View style={styles.detaySection}>
@@ -754,60 +772,45 @@ export default function TaleplerimScreen() {
                                             )}
 
                                             {/* ------------- SOHBET/MESAJLAR ------------- */}
-                                            <View style={styles.detaySection}>
-                                                <Text style={[styles.detaySectionTitle, { color: colors.text }]}>💬 Mesajlar</Text>
+                                            <ChatSection
+                                                talepId={seciliTalep.id}
+                                                yorumlar={seciliTalep.yorumlar}
+                                                // @ts-ignore
+                                                currentUserId={user?.id}
+                                                userRole={user?.rol === 'teknisyen' ? 'teknisyen' : 'musteri'}
+                                                isClosed={seciliTalep.durum === 'kapatildi'}
+                                                onSend={handleSendMessage}
+                                            />
 
-                                                <View style={[styles.chatContainer, { backgroundColor: isDark ? '#1a1a1a' : '#f5f5f5', borderColor: colors.border }]}>
-                                                    {(!seciliTalep.yorumlar || seciliTalep.yorumlar.length === 0) ? (
-                                                        <View style={styles.emptyChat}>
-                                                            <Text style={[styles.emptyChatText, { color: colors.textSecondary }]}>Henüz mesaj yok. İlk mesajı siz yazın.</Text>
+
+                                            {/* Randevu Bilgisi (Müşteri Gösterimi) */}
+                                            {seciliTalep.kesinlesenRandevu ? (
+                                                <View style={styles.detaySection}>
+                                                    <Text style={[styles.detaySectionTitle, { color: colors.text }]}>📅 Onaylanan Randevu</Text>
+                                                    <View style={{ backgroundColor: isDark ? '#1b5e20' : '#e8f5e9', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#4caf50' }}>
+                                                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                                                            <Ionicons name="checkmark-circle" size={24} color="#2e7d32" />
+                                                            <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2e7d32', marginLeft: 8 }}>Randevu Onaylandı</Text>
                                                         </View>
-                                                    ) : (
-                                                        seciliTalep.yorumlar.map((mesaj, idx) => {
-                                                            const isMe = mesaj.yazanId === user?.uid;
-                                                            return (
-                                                                <View key={idx} style={[
-                                                                    styles.messageBubble,
-                                                                    isMe ? styles.messageBubbleMe : styles.messageBubbleOther,
-                                                                    { backgroundColor: isMe ? colors.primary : (isDark ? '#333' : '#e0e0e0') }
-                                                                ]}>
-                                                                    <Text style={[styles.messageAuthor, { color: isMe ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]}>
-                                                                        {mesaj.yazanAdi}
-                                                                    </Text>
-                                                                    <Text style={[styles.messageText, { color: isMe ? '#fff' : (isDark ? '#fff' : '#000') }]}>
-                                                                        {mesaj.mesaj}
-                                                                    </Text>
-                                                                </View>
-                                                            );
-                                                        })
-                                                    )}
-                                                </View>
-
-                                                {/* Mesaj Input */}
-                                                {seciliTalep.durum !== 'kapatildi' && (
-                                                    <View style={styles.inputContainer}>
-                                                        <TextInput
-                                                            style={[styles.miniInput, { backgroundColor: isDark ? '#333' : '#fff', color: colors.text, borderColor: colors.border }]}
-                                                            placeholder="Mesaj yazın..."
-                                                            placeholderTextColor={colors.textMuted}
-                                                            value={yeniYorum}
-                                                            onChangeText={setYeniYorum}
-                                                            multiline
-                                                        />
-                                                        <TouchableOpacity
-                                                            style={[styles.sendButton, { backgroundColor: colors.primary, opacity: (!yeniYorum.trim() || mesajYukleniyor) ? 0.5 : 1 }]}
-                                                            onPress={mesajGonder}
-                                                            disabled={!yeniYorum.trim() || mesajYukleniyor}
-                                                        >
-                                                            {mesajYukleniyor ? (
-                                                                <ActivityIndicator size="small" color="#fff" />
-                                                            ) : (
-                                                                <Ionicons name="send" size={18} color="#fff" />
-                                                            )}
-                                                        </TouchableOpacity>
+                                                        <Text style={{ fontSize: 15, color: colors.text, marginLeft: 32 }}>
+                                                            {formatRandevuTarihi(seciliTalep.kesinlesenRandevu.baslangic)}
+                                                        </Text>
                                                     </View>
-                                                )}
-                                            </View>
+                                                </View>
+                                            ) : (seciliTalep.randevuTercihleri && seciliTalep.randevuTercihleri.length > 0 && (
+                                                <View style={styles.detaySection}>
+                                                    <Text style={[styles.detaySectionTitle, { color: colors.text }]}>📅 Randevu Tercihleriniz</Text>
+                                                    <Text style={{ color: colors.textSecondary, marginBottom: 5, fontSize: 13 }}>Teknisyen onayı bekleniyor:</Text>
+                                                    {seciliTalep.randevuTercihleri.map((slot: any, idx: number) => (
+                                                        <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                                                            <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
+                                                            <Text style={{ color: colors.text, fontSize: 13, marginLeft: 6 }}>
+                                                                {formatRandevuTarihi(slot.baslangic)}
+                                                            </Text>
+                                                        </View>
+                                                    ))}
+                                                </View>
+                                            ))}
 
                                             {/* Tarih */}
                                             <View style={styles.detaySection}>
@@ -894,15 +897,16 @@ export default function TaleplerimScreen() {
                             </View>
                         </TouchableWithoutFeedback>
                     </View>
-                </TouchableWithoutFeedback>
-            </Modal>
+                </TouchableWithoutFeedback >
+            </Modal >
 
             {/* Puanlama Modal */}
-            <Modal
+            < Modal
                 visible={puanModalVisible}
                 transparent={true}
                 animationType="fade"
-                onRequestClose={() => setPuanModalVisible(false)}
+                onRequestClose={() => setPuanModalVisible(false)
+                }
             >
                 <View style={styles.modalOverlay}>
                     <View style={[styles.puanModalContent, { backgroundColor: colors.card }]}>
@@ -959,10 +963,10 @@ export default function TaleplerimScreen() {
                         </View>
                     </View>
                 </View>
-            </Modal>
+            </Modal >
 
             {/* Tam Ekran Fotoğraf Modal */}
-            <Modal visible={!!tamEkranFoto} transparent={true} animationType="fade" onRequestClose={() => setTamEkranFoto(null)}>
+            < Modal visible={!!tamEkranFoto} transparent={true} animationType="fade" onRequestClose={() => setTamEkranFoto(null)}>
                 <View style={styles.fullScreenModal}>
                     <TouchableOpacity style={styles.closeButton} onPress={() => setTamEkranFoto(null)}>
                         <Ionicons name="close" size={30} color="#fff" />
@@ -971,8 +975,8 @@ export default function TaleplerimScreen() {
                         <OptimizedImage source={{ uri: tamEkranFoto }} style={styles.fullScreenImage} contentFit="contain" />
                     )}
                 </View>
-            </Modal>
-        </View>
+            </Modal >
+        </View >
     );
 }
 
@@ -1436,25 +1440,30 @@ const styles = StyleSheet.create({
         lineHeight: 18,
     },
     inputContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
+        flexDirection: 'column', // Changed from row to column
+        gap: 12, // Increased gap
+        marginTop: 10,
     },
     miniInput: {
-        flex: 1,
-        borderRadius: 20,
+        width: '100%', // Full width
+        borderRadius: 12,
         borderWidth: 1,
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        fontSize: 13,
-        maxHeight: 80,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        fontSize: 14,
+        minHeight: 80, // Taller input area
+        maxHeight: 120,
+        textAlignVertical: 'top', // Ensure text starts at top
     },
     sendButton: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
+        alignSelf: 'flex-end', // Align button to right
+        width: 120, // Wider button
+        height: 40,
+        borderRadius: 10,
         justifyContent: 'center',
         alignItems: 'center',
+        flexDirection: 'row',
+        gap: 8,
     },
 });
 

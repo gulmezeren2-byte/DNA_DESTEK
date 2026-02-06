@@ -112,7 +112,7 @@ service cloud.firestore {
           (resource.data.atananTeknisyenId == request.auth.uid || 
            resource.data.atananEkipId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kategori ||
            (resource.data.atananEkipUyeIds != null && request.auth.uid in resource.data.atananEkipUyeIds)) &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['durum', 'cozumTarihi', 'cozumFotograflari', 'guncellemeTarihi', 'yorumlar'])
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['durum', 'cozumTarihi', 'cozumFotograflari', 'guncellemeTarihi', 'yorumlar', 'kesinlesenRandevu'])
         )) ||
         // Müşteri:
         (resource.data.olusturanId == request.auth.uid && (

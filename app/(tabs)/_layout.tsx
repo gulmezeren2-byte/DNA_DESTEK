@@ -10,7 +10,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 
 export default function Layout() {
-  const { isYonetim, isTeknisyen, isMusteri } = useAuth();
+  const { isYonetim, isTeknisyen, isMusteri, isSorumlu } = useAuth();
   const { isDark, colors } = useTheme();
   const dimensions = useWindowDimensions();
   const drawerNavRef = useRef<any>(null);
@@ -147,6 +147,14 @@ export default function Layout() {
               }}
             />
             <Drawer.Screen
+              name="raporlar"
+              options={{
+                drawerLabel: 'Raporlar',
+                drawerIcon: ({ color }) => <Ionicons name="bar-chart" size={22} color={color} />,
+                title: 'Raporlar'
+              }}
+            />
+            <Drawer.Screen
               name="yonetim"
               options={{
                 drawerLabel: 'Yönetim Paneli',
@@ -178,14 +186,7 @@ export default function Layout() {
                 drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="people-outline" size={22} color={color} />,
               }}
             />
-            <Drawer.Screen
-              name="raporlar"
-              options={{
-                drawerLabel: 'Raporlar',
-                title: 'Raporlar',
-                drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="stats-chart-outline" size={22} color={color} />,
-              }}
-            />
+
             <Drawer.Screen
               name="ayarlar"
               options={{
@@ -196,6 +197,79 @@ export default function Layout() {
             />
 
             {/* Gizli Sayfalar */}
+            <Drawer.Screen name="yeni-talep" options={{ drawerItemStyle: { display: 'none' } }} />
+            <Drawer.Screen name="taleplerim" options={{ drawerItemStyle: { display: 'none' } }} />
+            <Drawer.Screen name="teknisyen" options={{ drawerItemStyle: { display: 'none' } }} />
+            <Drawer.Screen name="explore" options={{ drawerItemStyle: { display: 'none' } }} />
+          </Drawer>
+          <FloatingMenuButton />
+        </View>
+      </GestureHandlerRootView>
+    );
+  }
+
+  // Sorumlu Layout (Yönetim benzeri ama Raporlar yok)
+  if (isSorumlu) {
+    return (
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <View style={{ flex: 1 }}>
+          <Drawer
+            screenOptions={screenOptions}
+            drawerContent={renderDrawerContent}
+          >
+            <Drawer.Screen
+              name="index"
+              options={{
+                drawerLabel: 'Ana Sayfa',
+                title: 'Ana Sayfa',
+                drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="home-outline" size={22} color={color} />,
+              }}
+            />
+            {/* Raporlar Yok */}
+            <Drawer.Screen
+              name="yonetim"
+              options={{
+                drawerLabel: 'Yönetim Paneli',
+                title: 'Yönetim',
+                drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="grid-outline" size={22} color={color} />,
+              }}
+            />
+            <Drawer.Screen
+              name="ekipler"
+              options={{
+                drawerLabel: 'Ekipler',
+                title: 'Ekipler',
+                drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="people-circle-outline" size={22} color={color} />,
+              }}
+            />
+            <Drawer.Screen
+              name="projeler"
+              options={{
+                drawerLabel: 'Projeler',
+                title: 'Projeler',
+                drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="business-outline" size={22} color={color} />,
+              }}
+            />
+            <Drawer.Screen
+              name="kullanicilar"
+              options={{
+                drawerLabel: 'Kullanıcılar',
+                title: 'Kullanıcılar',
+                drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="people-outline" size={22} color={color} />,
+              }}
+            />
+
+            <Drawer.Screen
+              name="ayarlar"
+              options={{
+                drawerLabel: 'Ayarlar',
+                title: 'Ayarlar',
+                drawerIcon: ({ color, size }: { color: string; size: number }) => <Ionicons name="settings-outline" size={22} color={color} />,
+              }}
+            />
+
+            {/* Gizli Sayfalar */}
+            <Drawer.Screen name="raporlar" options={{ drawerItemStyle: { display: 'none' } }} />
             <Drawer.Screen name="yeni-talep" options={{ drawerItemStyle: { display: 'none' } }} />
             <Drawer.Screen name="taleplerim" options={{ drawerItemStyle: { display: 'none' } }} />
             <Drawer.Screen name="teknisyen" options={{ drawerItemStyle: { display: 'none' } }} />

@@ -24,6 +24,7 @@ export default function CustomDrawerContent(props: DrawerContentComponentProps) 
         if (user?.rol === 'yonetim') return 'Yönetici';
         if (user?.rol === 'yonetim_kurulu') return 'Yönetim Kurulu';
         if (user?.rol === 'teknisyen') return 'Teknisyen';
+        if (user?.rol === 'sorumlu') return 'Sorumlu';
         return 'Müşteri';
     };
 

@@ -93,28 +93,17 @@ function AuthNavigator() {
       router.replace('/login');
       hasNavigated.current = false;
     } else if (isAuthenticated && isProfileComplete && (inAuthGroup || inRoot)) {
-      // Rol bazlı yönlendirme
-      if (isTeknisyen) {
-        router.replace('/(tabs)/teknisyen');
-      } else if (isYonetim) {
-        router.replace('/(tabs)/yonetim');
-      } else {
-        router.replace('/(tabs)');
-      }
+      // Rol bazlı yönlendirme yerine herkes Ana Sayfaya
+      router.replace('/(tabs)');
       hasNavigated.current = true;
     } else if (isAuthenticated && isProfileComplete && inTabs && !hasNavigated.current) {
-      // İlk yüklemede doğru sayfaya yönlendir
+      // Sayfa yenilendiğinde "Güvenli Bölge" kontrolü (Opsiyonel)
+      // Ancak kullanıcı Index'teyse karışmıyoruz.
       const currentTab = (segments as string[])[1];
-      if (isTeknisyen && currentTab !== 'teknisyen') {
-        router.replace('/(tabs)/teknisyen');
-        hasNavigated.current = true;
-      } else if (isYonetim && currentTab !== 'yonetim' && currentTab !== 'explore') {
-        router.replace('/(tabs)/yonetim');
-        hasNavigated.current = true;
-      } else if (isMusteri && currentTab !== 'index' && currentTab !== 'taleplerim') {
-        router.replace('/(tabs)');
-        hasNavigated.current = true;
-      }
+
+      // Eğer kullanıcı yetkisi olmayan bir sayfadaysa yönlendirilebilir
+      // Şimdilik sadece index'e zorlama mantığını kaldırıyoruz ki herkes Index'i görebilsin.
+      hasNavigated.current = true;
     }
   }, [user, loading, segments, isAuthenticated, isTeknisyen, isYonetim, isMusteri, isProfileComplete]);
 
@@ -131,16 +120,21 @@ function AuthNavigator() {
     return <MissingProfileView onLogout={logout} isDark={isDark} />;
   }
 
+  // Global Activity Listener
+  const { resetActivity } = useAuth();
+
   return (
-    <NavigationThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="login" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
-      <StatusBar style={isDark ? 'light' : 'dark'} />
-    </NavigationThemeProvider>
+    <View style={{ flex: 1 }} onTouchStart={() => resetActivity()}>
+      <NavigationThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
+        <Stack>
+          <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen name="login" options={{ headerShown: false }} />
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+        </Stack>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+      </NavigationThemeProvider>
+    </View>
   );
 }
 

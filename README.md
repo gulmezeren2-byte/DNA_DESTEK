@@ -48,3 +48,17 @@ Join our community of developers creating universal apps.
 
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+
+## Push Notifications & Cloud Functions
+
+To enable push notifications in this application, you must deploy the accompanying Cloud Functions. The client-side application relies on server-side logic to securely send notifications via Firebase Cloud Messaging (FCM).
+
+**Requirements:**
+1.  **Firebase Project**: Ensure your Firebase project is on the Blaze (Pay-as-you-go) plan to support external network requests.
+2.  **Cloud Functions**: Deploy the functions located in the `functions/` directory.
+    ```bash
+    cd functions
+    npm install
+    npm run deploy
+    ```
+3.  **App Check**: For enhanced security, ensure Firebase App Check is configured for your web and mobile apps.

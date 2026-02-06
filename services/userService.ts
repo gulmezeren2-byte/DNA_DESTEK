@@ -21,6 +21,29 @@ export const getUsers = async (): Promise<ServiceResponse<DNAUser[]>> => {
     }
 };
 
+export const getUsersByIds = async (userIds: string[]): Promise<ServiceResponse<DNAUser[]>> => {
+    try {
+        if (!userIds || userIds.length === 0) return { success: true, data: [] };
+
+        // Chunking for Firestore 'in' limit of 10
+        const chunks = [];
+        for (let i = 0; i < userIds.length; i += 10) {
+            chunks.push(userIds.slice(i, i + 10));
+        }
+
+        let allUsers: DNAUser[] = [];
+        for (const chunk of chunks) {
+            const q = query(collection(db, "users"), where("__name__", "in", chunk));
+            const snapshot = await getDocs(q);
+            allUsers.push(...snapshot.docs.map(d => ({ id: d.id, ...d.data() } as DNAUser)));
+        }
+
+        return { success: true, data: allUsers };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+};
+
 export const updateUserRole = async (userId: string, newRole: UserRole): Promise<ServiceResponse<void>> => {
     try {
         await updateDoc(doc(db, "users", userId), { rol: newRole });

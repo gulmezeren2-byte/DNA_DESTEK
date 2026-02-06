@@ -27,10 +27,12 @@ const rolEtiketleri: Record<string, { label: string; color: string; icon: string
     teknisyen: { label: 'Teknisyen', color: '#ef6c00', icon: 'construct' },
     yonetim: { label: 'Yönetim', color: '#7b1fa2', icon: 'shield-checkmark' },
     yonetim_kurulu: { label: 'Yönetim Kurulu', color: '#c2185b', icon: 'briefcase' },
+    sorumlu: { label: 'Sorumlu', color: '#00897b', icon: 'people' },
 };
 
 export default function AyarlarScreen() {
-    const { user, setUser, logout } = useAuth();
+    // @ts-ignore
+    const { user, setUser, logout, canSwitchRoles, switchRole } = useAuth();
     const { isDark, colors, themeMode, setThemeMode } = useTheme();
     const router = useRouter();
 
@@ -232,6 +234,69 @@ export default function AyarlarScreen() {
                     )}
                 </View>
 
+                {/* Geliştirici / Test Modu (Sadece Yönetim) */}
+                {/* @ts-ignore: Context types might be slightly outdated in check but safe in runtime */}
+                {user && (user.rol === 'yonetim' || user.rol === 'yonetim_kurulu' || user.rol === 'teknisyen' || user.rol === 'musteri' || user.rol === 'sorumlu') &&
+                    // @ts-ignore
+                    (canSwitchRoles) && (
+                        <View style={[styles.section, { backgroundColor: '#fff3e0', borderColor: '#ffb74d', borderWidth: 1 }]}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                                <Ionicons name="construct-outline" size={24} color="#e65100" />
+                                <Text style={[styles.sectionTitle, { color: '#e65100', marginBottom: 0 }]}>Geliştirici / Test Modu</Text>
+                            </View>
+                            <Text style={{ fontSize: 13, color: '#e65100', marginBottom: 15 }}>
+                                Test yapmak için anlık olarak rolünüzü değiştirebilirsiniz. Temizlik ekibi hariç tüm verileri görebilirsiniz.
+                            </Text>
+
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                                <TouchableOpacity
+                                    style={[styles.roleButton, user?.rol === 'musteri' && styles.activeRoleButton, { backgroundColor: user?.rol === 'musteri' ? '#1565c0' : '#fff' }]}
+                                    // @ts-ignore
+                                    onPress={() => switchRole && switchRole('musteri')}
+                                >
+                                    <Ionicons name="person" size={16} color={user?.rol === 'musteri' ? '#fff' : '#1565c0'} />
+                                    <Text style={[styles.roleButtonText, { color: user?.rol === 'musteri' ? '#fff' : '#1565c0' }]}>Müşteri</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={[styles.roleButton, user?.rol === 'teknisyen' && styles.activeRoleButton, { backgroundColor: user?.rol === 'teknisyen' ? '#ef6c00' : '#fff', borderColor: '#ef6c00' }]}
+                                    // @ts-ignore
+                                    onPress={() => switchRole && switchRole('teknisyen')}
+                                >
+                                    <Ionicons name="construct" size={16} color={user?.rol === 'teknisyen' ? '#fff' : '#ef6c00'} />
+                                    <Text style={[styles.roleButtonText, { color: user?.rol === 'teknisyen' ? '#fff' : '#ef6c00' }]}>Teknisyen</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={[styles.roleButton, user?.rol === 'yonetim' && styles.activeRoleButton, { backgroundColor: user?.rol === 'yonetim' ? '#7b1fa2' : '#fff', borderColor: '#7b1fa2' }]}
+                                    // @ts-ignore
+                                    onPress={() => switchRole && switchRole('yonetim')}
+                                >
+                                    <Ionicons name="shield-checkmark" size={16} color={user?.rol === 'yonetim' ? '#fff' : '#7b1fa2'} />
+                                    <Text style={[styles.roleButtonText, { color: user?.rol === 'yonetim' ? '#fff' : '#7b1fa2' }]}>Yönetici</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={[styles.roleButton, user?.rol === 'yonetim_kurulu' && styles.activeRoleButton, { backgroundColor: user?.rol === 'yonetim_kurulu' ? '#4a148c' : '#fff', borderColor: '#4a148c' }]}
+                                    // @ts-ignore
+                                    onPress={() => switchRole && switchRole('yonetim_kurulu')}
+                                >
+                                    <Ionicons name="briefcase" size={16} color={user?.rol === 'yonetim_kurulu' ? '#fff' : '#4a148c'} />
+                                    <Text style={[styles.roleButtonText, { color: user?.rol === 'yonetim_kurulu' ? '#fff' : '#4a148c' }]}>Yönetim K.</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={[styles.roleButton, user?.rol === 'sorumlu' && styles.activeRoleButton, { backgroundColor: user?.rol === 'sorumlu' ? '#00897b' : '#fff', borderColor: '#00897b' }]}
+                                    // @ts-ignore
+                                    onPress={() => switchRole && switchRole('sorumlu')}
+                                >
+                                    <Ionicons name="people" size={16} color={user?.rol === 'sorumlu' ? '#fff' : '#00897b'} />
+                                    <Text style={[styles.roleButtonText, { color: user?.rol === 'sorumlu' ? '#fff' : '#00897b' }]}>Sorumlu</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    )}
+
                 {/* 2. Tema Ayarları */}
                 <View style={[styles.section, { backgroundColor: colors.card }]}>
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>🎨 Tema</Text>
@@ -380,4 +445,7 @@ const styles = StyleSheet.create({
     logoutText: { color: '#d32f2f', fontSize: 16, fontWeight: 'bold' },
     footer: { alignItems: 'center', marginTop: 20 },
     versionText: { fontSize: 12 },
+    roleButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#ddd', gap: 6 },
+    activeRoleButton: { borderColor: 'transparent' },
+    roleButtonText: { fontSize: 13, fontWeight: '600' },
 });

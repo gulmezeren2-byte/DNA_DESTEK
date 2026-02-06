@@ -24,9 +24,14 @@ interface AuthContextType {
     isMusteri: boolean;
     isTeknisyen: boolean;
     isYonetim: boolean;
+    isSorumlu: boolean;
     isBoardMember: boolean;
     isProfileComplete: boolean;
     setUser: (user: DNAUser | null) => void;
+    resetActivity: () => void;
+    originalRole?: string | null;
+    switchRole?: (role: string) => void;
+    canSwitchRoles?: boolean;
 }
 
 // Context oluştur
@@ -165,6 +170,38 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         return userData;
     };
 
+    const [originalRole, setOriginalRole] = useState<string | null>(null);
+
+    // Context değerleri
+    const isMusteri = user?.rol === 'musteri';
+    const isTeknisyen = user?.rol === 'teknisyen';
+    const isSorumlu = user?.rol === 'sorumlu';
+    const isYonetim = user?.rol === 'yonetim' || user?.rol === 'yonetim_kurulu';
+    const isBoardMember = user?.rol === 'yonetim_kurulu';
+
+    // Rol Değiştirme (Test için)
+    const switchRole = async (targetRole: string) => {
+        if (!user) return;
+
+        // İlk kez değiştiriyorsak orijinali sakla
+        if (!originalRole) {
+            setOriginalRole(user.rol);
+        }
+
+        // Eğer orijinal role dönüyorsak originalRole'u sıfırla
+        if (originalRole === targetRole && originalRole === user.rol) {
+            // Already original
+            setOriginalRole(null);
+        } else if (originalRole === targetRole) {
+            setOriginalRole(null);
+        }
+
+        // Kullanıcı nesnesini güncelle (Local state only)
+        // Note: This only updates the context state, not Firestore. 
+        // Refreshing the app will reset to the real role from Firestore.
+        setUser({ ...user, rol: targetRole } as DNAUser);
+    };
+
     const value: AuthContextType = React.useMemo(() => ({
         user,
         loading,
@@ -173,13 +210,19 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         logout,
         refreshUser,
         isAuthenticated: !!user,
-        isMusteri: user?.rol === 'musteri',
-        isTeknisyen: user?.rol === 'teknisyen',
-        isYonetim: user?.rol === 'yonetim' || user?.rol === 'yonetim_kurulu',
-        isBoardMember: user?.rol === 'yonetim_kurulu',
+        isMusteri,
+        isTeknisyen,
+        isYonetim,
+        isSorumlu,
+        isBoardMember,
         isProfileComplete: user?.hasProfile === true,
         setUser,
-    }), [user, loading, error]);
+        resetActivity,
+        // Role Switching properties
+        originalRole,
+        switchRole,
+        canSwitchRoles: (user?.rol === 'yonetim') || !!originalRole
+    }), [user, loading, error, originalRole, isMusteri, isTeknisyen, isYonetim, isBoardMember]);
 
     return (
         <AuthContext.Provider value={value}>
